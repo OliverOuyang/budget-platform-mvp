@@ -1,0 +1,35 @@
+{
+  "name": "2月新方案",
+  "description": "",
+  "created_at": "2026-04-01T23:53:38.242843",
+  "parameters": {
+    "total_budget": 3000,
+    "month_total_days": 30,
+    "days_elapsed": 25,
+    "existing_m0_calculation_months": 3,
+    "channel_1_3_approval_rate": {
+      "腾讯": 0.24,
+      "抖音": 0.2,
+      "精准营销": 0.18,
+      "付费商店": 0.07,
+      "免费渠道": 0.019
+    },
+    "channel_1_8_cps": {
+      "腾讯": 0.27,
+      "抖音": 0.3,
+      "精准营销": 0.15,
+      "付费商店": 0.1,
+      "免费渠道": 0.0
+    },
+    "channel_t0_completion_cost": {
+      "腾讯": 920.698195169588,
+      "抖音": 935.979927361589,
+      "精准营销": 420.646551724137,
+      "付费商店": 148.578876004607,
+      "免费渠道": 0.0
+    },
+    "non_initial_credit_transaction": 0.26,
+    "existing_m0_expense": 0.0,
+    "rta_promotion_fee": 239.0
+  }
+}
