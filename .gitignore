@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+.pytest_cache/
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Trashes/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Data (local only, not committed)
+data/*.xlsx
+data/*.csv
+data/*.parquet
+
+# Logs
+*.log
