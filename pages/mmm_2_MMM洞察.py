@@ -3,7 +3,11 @@ MMM 洞察页（Robyn 风格 Python 实现）
 重构版：增加推导逻辑说明、数据来源、结果解读折叠模块、引导下一步
 """
 import sys
-sys.path.insert(0, "/home/ubuntu/budget_combined")
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import streamlit as st
 import pandas as pd
@@ -149,6 +153,14 @@ mask = (df["week_start"].dt.strftime("%Y-%m-%d") >= train_start) & \
        (df["week_start"].dt.strftime("%Y-%m-%d") <= train_end)
 df_train = df[mask].copy()
 
+if pd.to_datetime(train_start) > pd.to_datetime(train_end):
+    st.error("训练起始周不能晚于截止周，请先修正训练范围。")
+    st.stop()
+
+if df_train.empty:
+    st.error("当前训练范围没有可用数据，请重新选择训练起止周。")
+    st.stop()
+
 st.info(f"📅 训练数据：**{len(df_train)} 周**（{train_start} ~ {train_end}）| 因变量：`{dv_col}` | Adstock：`{adstock_type}`")
 
 with st.expander("📖 为什么要选择训练数据范围？", expanded=False):
@@ -165,9 +177,9 @@ col_btn1, col_btn2 = st.columns([1, 3])
 train_btn = col_btn1.button("▶️ 开始训练", type="primary", use_container_width=True)
 load_btn  = col_btn2.button("📂 加载已有模型", use_container_width=True)
 
-model: MMMModel = None
+model: MMMModel = st.session_state.get("mmm_model")
 
-if load_btn or (use_cached and "mmm_model" in st.session_state):
+if load_btn or (use_cached and model is None):
     cached = st.session_state.get("mmm_model") or load_model()
     if cached and cached.is_fitted:
         model = cached
@@ -180,6 +192,9 @@ if train_btn:
     if dv_col not in df_train.columns:
         st.error(f"因变量列 `{dv_col}` 不存在，请检查数据。")
     else:
+        st.session_state.pop("mmm_optimal_budget", None)
+        st.session_state.pop("mmm_budget_suggestion", None)
+        st.session_state.pop("mmm_opt_total", None)
         progress_bar = st.progress(0.0, text="正在训练 MMM 模型...")
         def update_progress(p):
             progress_bar.progress(min(p, 1.0), text=f"贝叶斯优化进度：{p*100:.0f}%")
@@ -662,6 +677,8 @@ with tab4:
             st.success("✅ 优化完成！以下为建议分配方案。")
 
     if "mmm_optimal_budget" in st.session_state:
+        if st.session_state.get("mmm_opt_total") != opt_total:
+            st.info("当前展示的是上一次预算优化结果；如果已修改优化总预算，请重新点击“运行预算优化”。")
         optimal = st.session_state["mmm_optimal_budget"]
 
         current_spends = {ch: round(df_train[f"{ch}_spend"].mean(), 1)

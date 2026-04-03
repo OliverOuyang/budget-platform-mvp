@@ -90,7 +90,7 @@ def render_tab_customer_result():
     st.info(
         f"**初审授信户贡献**: "
         f"当月首登({t2.current_month_initial_m0:.2f}亿) + 首登T0({t2.first_login_t0:.2f}亿) + "
-        f"存量首登({t2.existing_initial_m0:.2f}亿) = **{t2.initial_credit_total:.2f}亿**元，"
+        f"存量首登({t2.existing_initial_m0:.2f}亿) = **{t2.initial_credit_total:.2f}亿**，"
         f"占总交易额**{(t2.current_month_initial_m0 + t2.first_login_t0 + t2.existing_initial_m0) / t2.total_transaction:.1%}**"
     )
     ratio = t2.current_month_initial_m0 / t2.first_login_t0 if t2.first_login_t0 > 0 else 0

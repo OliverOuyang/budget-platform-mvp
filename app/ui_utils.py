@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import pandas as pd
 import numpy as np
 import streamlit as st
 import time
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 from app.config import (
     CHANNEL_NAMES,
     DEFAULT_1_3_RATES,
@@ -147,7 +149,11 @@ def classify_target_progress(actual: float, target: float, *, higher_is_better: 
     }
 
 
-def build_v01_decision_summary(flow: Dict[str, Any], table1: Any | None = None, table2: Any | None = None) -> Dict[str, Any]:
+def build_v01_decision_summary(
+    flow: Dict[str, Any],
+    table1: Optional[Any] = None,
+    table2: Optional[Any] = None,
+) -> Dict[str, Any]:
     """Build consistent decision framing for both input and result stages."""
     targets = flow.get("targets", {})
     inputs = flow.get("inputs", {})
@@ -242,9 +248,18 @@ def build_channel_parameter_rows(
     """构建渠道参数编辑表。"""
     rows = []
     template_params = template_params or {}
+    total_expense = sum((item.get("花费") or 0) for item in last_month_data.values())
 
     for ch_name in CHANNEL_NAMES:
         defaults = last_month_data.get(ch_name, {})
+        historical_share = ((defaults.get("花费") or 0) / total_expense * 100) if total_expense else 0.0
+        target_share = (
+            template_params.get("channel_budget_shares", {}).get(
+                ch_name,
+                historical_share / 100,
+            )
+            * 100
+        )
         approval_rate = (
             template_params.get("channel_1_3_approval_rate", {}).get(
                 ch_name,
@@ -267,9 +282,10 @@ def build_channel_parameter_rows(
         rows.append(
             {
                 "渠道": ch_name,
+                "目标花费结构(%)": target_share,
                 "目标1-3过件率(%)": approval_rate * 100,
                 "目标CPS(%)": cps_ratio * 100,
-                "上月申完成本(元)": completion_cost,
+                "历史花费结构(%)": historical_share,
                 "历史1-3 T0过件率(%)": defaults.get("1-3t0过件率", np.nan) * 100
                 if defaults.get("1-3t0过件率") is not None
                 else np.nan,
@@ -282,14 +298,19 @@ def build_channel_parameter_rows(
 
     return pd.DataFrame(rows)
 
-def parse_channel_parameter_rows(df: pd.DataFrame) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, float]]:
+def parse_channel_parameter_rows(df: pd.DataFrame) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, float], Dict[str, float]]:
     """从编辑表中回收渠道参数。"""
     channel_1_3_rate: Dict[str, float] = {}
     channel_1_8_cps: Dict[str, float] = {}
     channel_t0_cost: Dict[str, float] = {}
+    channel_budget_shares: Dict[str, float] = {}
 
     for row in df.to_dict("records"):
         channel_name = row["渠道"]
+        try:
+            channel_budget_shares[channel_name] = max(float(row["目标花费结构(%)"] or 0), 0.0) / 100
+        except (ValueError, TypeError):
+            channel_budget_shares[channel_name] = 0.0
         try:
             channel_1_3_rate[channel_name] = max(float(row["目标1-3过件率(%)"] or 0), 0.0) / 100
         except (ValueError, TypeError):
@@ -299,16 +320,21 @@ def parse_channel_parameter_rows(df: pd.DataFrame) -> Tuple[Dict[str, float], Di
         except (ValueError, TypeError):
             channel_1_8_cps[channel_name] = 0.0
         try:
-            channel_t0_cost[channel_name] = max(float(row["上月申完成本(元)"] or 0), 0.0)
+            channel_t0_cost[channel_name] = max(float(row["历史T0申完成本(元)"] or 0), 0.0)
         except (ValueError, TypeError):
             channel_t0_cost[channel_name] = 0.0
 
-    return channel_1_3_rate, channel_1_8_cps, channel_t0_cost
+    total_share = sum(channel_budget_shares.values())
+    if total_share > 0:
+        channel_budget_shares = {k: v / total_share for k, v in channel_budget_shares.items()}
+
+    return channel_budget_shares, channel_1_3_rate, channel_1_8_cps, channel_t0_cost
 
 def run_calculation(
     df_raw1: pd.DataFrame,
     df_raw2: pd.DataFrame,
     total_budget: float,
+    channel_budget_shares: Dict[str, float],
     channel_1_3_rate: Dict[str, float],
     channel_1_8_cps: Dict[str, float],
     channel_t0_cost: Dict[str, float],
@@ -335,6 +361,7 @@ def run_calculation(
                 df_raw1=df_raw1,
                 df_raw2=df_raw2,
                 total_budget=total_budget,
+                channel_budget_shares=channel_budget_shares,
                 channel_1_3_rate=channel_1_3_rate,
                 channel_1_8_cps=channel_1_8_cps,
                 channel_t0_cost=channel_t0_cost,
@@ -355,6 +382,7 @@ def run_calculation(
             flow["results"] = build_v01_result_snapshot(table1, table2, params)
             flow["inputs"] = {
                 "total_budget": total_budget,
+                "channel_budget_shares": channel_budget_shares,
                 "channel_1_3_rate": channel_1_3_rate,
                 "channel_1_8_cps": channel_1_8_cps,
                 "channel_t0_cost": channel_t0_cost,

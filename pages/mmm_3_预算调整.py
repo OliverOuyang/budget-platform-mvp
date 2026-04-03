@@ -7,7 +7,10 @@
 4. 增加结果解读说明
 """
 import sys
-sys.path.insert(0, "/home/ubuntu/budget_combined")
+from pathlib import Path
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 import streamlit as st
 import pandas as pd
@@ -18,6 +21,13 @@ import plotly.express as px
 from utils.data_loader import load_mock_data, CHANNEL_NAMES, CHANNEL_KEYS, METRIC_LABELS
 from engine.rule_engine import RuleEngine, BudgetInput
 from engine.mmm_engine import load_model, hill_saturation
+
+
+def _sync_scaled_channel_spends(default_spends: dict) -> None:
+    """Keep keyed channel inputs in sync with the quick total-scale control."""
+    total_scale = float(st.session_state.get("mmm_total_scale", 1.0))
+    for ch, hist_spend in default_spends.items():
+        st.session_state[f"spend_{ch}"] = round(hist_spend * total_scale, 1)
 
 
 # ─── 样式 ─────────────────────────────────────────────────────────────────────
@@ -271,17 +281,23 @@ with col_left:
         min_value=0.5, max_value=2.0, value=1.0, step=0.05,
         format="%.2fx",
         help="拖动此滑块可按比例同步缩放所有渠道预算，适合整体预算变化场景",
+        key="mmm_total_scale",
+        on_change=_sync_scaled_channel_spends,
+        args=(default_spends,),
     )
 
     channel_spends = {}
     for ch in CHANNEL_KEYS:
         if f"{ch}_spend" not in df.columns:
             continue
+        widget_key = f"spend_{ch}"
         default_val = round(default_spends[ch] * total_scale, 1)
+        if widget_key not in st.session_state:
+            st.session_state[widget_key] = default_val
         mmm_sug_val = mmm_suggestion.get(ch)
 
         # 显示 MMM 建议标注
-        if mmm_sug_val:
+        if mmm_sug_val is not None:
             diff = mmm_sug_val - default_spends[ch]
             diff_pct = diff / default_spends[ch] * 100 if default_spends[ch] > 0 else 0
             arrow = "⬆️" if diff > 5 else ("⬇️" if diff < -5 else "➡️")
@@ -293,11 +309,11 @@ with col_left:
             label,
             min_value=0.0,
             max_value=5000.0,
-            value=default_val,
+            value=float(st.session_state[widget_key]),
             step=5.0,
-            key=f"spend_{ch}",
+            key=widget_key,
             help=f"历史均值: {default_spends[ch]:.1f} 万元/周" +
-                 (f" | MMM 优化建议: {mmm_sug_val:.1f} 万元/周" if mmm_sug_val else ""),
+                 (f" | MMM 优化建议: {mmm_sug_val:.1f} 万元/周" if mmm_sug_val is not None else ""),
         )
 
     total_budget = sum(channel_spends.values())
@@ -516,6 +532,7 @@ with col_save2:
         })
         st.session_state["saved_plans"] = saved_plans
         st.success(f"✅ 方案「{plan_name}」已保存！共 {len(saved_plans)} 个方案。请前往「方案对比」页面查看。")
+        st.switch_page("pages/mmm_4_方案对比.py")
 
 st.markdown("""
 <div class="guide-card">

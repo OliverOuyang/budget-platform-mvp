@@ -16,12 +16,11 @@ def render_tab_channel_result():
         column_config={
             "渠道名称": st.column_config.TextColumn("渠道", width="small"),
             "1-3 T0过件率": st.column_config.NumberColumn("1-3 T0过件率", format="%.2f%%", width="small"),
-            "1-8 T0 CPS": st.column_config.NumberColumn("1-8 T0 CPS", format="%.2f%%", width="small"),
-            "花费": st.column_config.NumberColumn("花费(万元)", format="%,.0f", width="small"),
-            "1-8首借24h借款金额": st.column_config.NumberColumn("1-8首借24h(亿元)", format="%.2f", width="small"),
-            "T0申完成本": st.column_config.NumberColumn("T0申完成本(元)", format="%.0f", width="small"),
-            "T0交易额": st.column_config.NumberColumn("T0交易额(亿元)", format="%.2f", width="small"),
-            "当月首登M0交易额": st.column_config.NumberColumn("M0交易额(亿元)", format="%.2f", width="small"),
+            "1-8 T0CPS": st.column_config.NumberColumn("1-8 T0 CPS", format="%.2f%%", width="small"),
+            "花费(千万元)": st.column_config.NumberColumn("花费(千万元)", format="%.2f", width="small"),
+            "T0申完成本(元)": st.column_config.NumberColumn("T0申完成本(元)", format="%.0f", width="small"),
+            "T0交易额(千万元)": st.column_config.NumberColumn("T0交易额(千万元)", format="%.2f", width="small"),
+            "当月首登M0交易额(千万元)": st.column_config.NumberColumn("M0交易额(千万元)", format="%.2f", width="small"),
             "1-3 T0授信量": st.column_config.NumberColumn("1-3授信量", format="%,.0f", width="small"),
         }
     )

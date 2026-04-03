@@ -16,6 +16,7 @@ class BudgetParameters:
     channel_1_3_approval_rate: Dict[str, float] = field(default_factory=dict)  # 1-3过件率
     channel_1_8_cps: Dict[str, float] = field(default_factory=dict)  # 1-8 CPS（小数，0.3=30%）
     channel_t0_completion_cost: Dict[str, float] = field(default_factory=dict)  # T0申完成本
+    channel_budget_shares: Dict[str, float] = field(default_factory=dict)  # 渠道花费结构（小数）
 
     # 第二张表手动输入参数
     non_initial_credit_transaction: float = 0.0  # 非初审授信户首借交易额 (亿元)

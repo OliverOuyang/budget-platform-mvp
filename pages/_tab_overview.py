@@ -65,6 +65,7 @@ def render_tab_overview():
 
             monthly_exp = df_n.groupby("月份标签")["花费"].sum().reset_index()
             monthly_exp.columns = ["月份", "花费(万元)"]
+            monthly_exp["花费(万元)"] = monthly_exp["花费(万元)"] / 10000
             monthly_exp = monthly_exp.sort_values("月份")
 
             monthly_t0 = df_n.groupby("月份标签")["1-8t0首借24h借款金额"].sum().reset_index()

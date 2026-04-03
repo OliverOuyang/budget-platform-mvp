@@ -17,6 +17,7 @@ def execute_calculation_pipeline(
     df_raw1: pd.DataFrame,
     df_raw2: pd.DataFrame,
     total_budget: float,
+    channel_budget_shares: Optional[Dict[str, float]],
     channel_1_3_rate: Dict[str, float],
     channel_1_8_cps: Dict[str, float],
     channel_t0_cost: Dict[str, float],
@@ -71,6 +72,7 @@ def execute_calculation_pipeline(
     # Step 1: 构建参数
     params = BudgetParameters(
         total_budget=total_budget,
+        channel_budget_shares=channel_budget_shares or {},
         channel_1_3_approval_rate=channel_1_3_rate,
         channel_1_8_cps=channel_1_8_cps,
         channel_t0_completion_cost=channel_t0_cost,
@@ -90,7 +92,7 @@ def execute_calculation_pipeline(
     )
 
     # Step 3: 计算预算占比
-    budget_shares = calculate_budget_shares(df_raw1)
+    budget_shares = channel_budget_shares or calculate_budget_shares(df_raw1)
 
     # Step 4: 计算 Table 1
     table1 = calculate_table1(
