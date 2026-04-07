@@ -6,6 +6,7 @@
 import pandas as pd
 import numpy as np
 from datetime import date, timedelta
+from pathlib import Path
 
 np.random.seed(42)
 
@@ -207,11 +208,8 @@ df["repeat_loan_final_loss_rate"] = np.round(
 )
 
 # ─── 保存 ─────────────────────────────────────────────────────────────────────
-out_path = "/home/ubuntu/budget_platform/mvp/data/mock_weekly.csv"
+out_path = Path(__file__).parent / "mock_weekly.csv"
 df.to_csv(out_path, index=False)
-print(f"✅ Mock 数据已生成：{out_path}")
-print(f"   行数：{len(df)}，列数：{len(df.columns)}")
-print(f"   时间范围：{df['week_start'].iloc[0]} ~ {df['week_start'].iloc[-1]}")
-print(f"\n列名列表：")
-for c in df.columns:
-    print(f"  {c}")
+print(f"Mock data generated: {out_path}")
+print(f"  rows: {len(df)}, cols: {len(df.columns)}")
+print(f"  range: {df['week_start'].iloc[0]} ~ {df['week_start'].iloc[-1]}")

@@ -38,6 +38,10 @@ METRIC_LABELS = {
 
 @st.cache_data
 def load_mock_data() -> pd.DataFrame:
+    if not MOCK_DATA_PATH.exists():
+        import subprocess, sys
+        gen_script = Path(__file__).parent.parent / "data" / "generate_mock.py"
+        subprocess.run([sys.executable, str(gen_script)], check=True)
     df = pd.read_csv(MOCK_DATA_PATH, parse_dates=["week_start"])
     return df
 
