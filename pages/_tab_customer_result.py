@@ -12,6 +12,10 @@ def render_tab_customer_result():
     t2 = st.session_state.get("table2_result")
     coef = st.session_state.get("coefficients")
 
+    if t1 is None or t2 is None:
+        st.info("请先在左侧完成预算推算，结果将在此处展示。")
+        return
+
     st.subheader("👥 Table 2 (客群汇总)")
     st.markdown(t2.to_html(), unsafe_allow_html=True)
 

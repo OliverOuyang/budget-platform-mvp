@@ -53,6 +53,9 @@ def render_tab_overview():
         with info_cols[2]:
             st.metric("存量首登M0 CPS", f"{coef.existing_m0_cps_avg:.2%}")
 
+        if '月份标签' not in df_n.columns or '渠道名称' not in df_n.columns:
+            st.warning("数据中缺少 '月份标签' 或 '渠道名称' 列，请检查数据格式")
+            return
         if "月份标签" in df_n.columns and "渠道名称" in df_n.columns:
             st.subheader("📈 关键指标按月趋势")
 

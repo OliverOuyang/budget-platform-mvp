@@ -480,5 +480,7 @@ def load_model() -> Optional[MMMModel]:
         if not isinstance(result, MMMModel):
             return None
         return result
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.warning(f"模型加载失败: {e}")
         return None

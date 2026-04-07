@@ -8,6 +8,10 @@ def render_tab_channel_result():
     """渠道结果 Tab"""
     t1 = st.session_state.get("table1_result")
 
+    if t1 is None:
+        st.info("请先在左侧完成预算推算，结果将在此处展示。")
+        return
+
     st.subheader("📊 Table 1 (渠道预测)")
     st.dataframe(
         t1.to_dataframe(),

@@ -139,6 +139,10 @@ with st.sidebar:
     st.divider()
     use_cached = st.checkbox("使用已缓存模型", value=True,
                              help="若已有训练好的模型，直接加载跳过训练")
+    if st.button("🗑️ 清除缓存模型", help="清除后下次运行将重新训练模型"):
+        for _k in ["mmm_model", "mmm_optimal_budget", "mmm_budget_suggestion", "mmm_opt_total"]:
+            st.session_state.pop(_k, None)
+        st.success("缓存已清除，下次运行将重新训练模型。")
 
     st.divider()
     st.markdown("""

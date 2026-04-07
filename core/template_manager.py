@@ -83,8 +83,11 @@ class TemplateManager:
             raise FileExistsError(f"模板 '{template_name}' 已存在")
 
         # 保存到JSON文件
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(template_data, f, ensure_ascii=False, indent=2)
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(template_data, f, ensure_ascii=False, indent=2)
+        except IOError as e:
+            raise IOError(f"模板保存失败（路径: {file_path}）：{e}") from e
 
         return str(file_path)
 

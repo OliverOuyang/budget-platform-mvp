@@ -7,7 +7,11 @@
 4. 增加引导下一步提示
 """
 import sys
-sys.path.insert(0, "/home/ubuntu/budget_combined")
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import streamlit as st
 import pandas as pd
@@ -175,8 +179,8 @@ def highlight_best(row):
         elif row.name in ["CPS", "FPD30+风险率"]:
             best_idx = row.astype(float).idxmin()
             styles[list(row.index).index(best_idx)] = "background-color: #c8e6c9; font-weight: bold"
-    except Exception:
-        pass
+    except Exception as e:
+        st.error(f"方案对比计算出错：{e}")
     return styles
 
 styled = compare_df.style.apply(highlight_best, axis=1)

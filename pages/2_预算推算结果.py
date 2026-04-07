@@ -867,6 +867,9 @@ def _render_parameter_panel() -> bool:
             last_month_data=last_month,
         )
         target_month_label = f"{days_elapsed} / {month_total_days} 天口径"
+        if 'df_raw1' not in data or '月份' not in data['df_raw1'].columns:
+            st.warning("数据不完整，无法推算结果")
+            return
         st.caption(f"{pd.to_datetime(max(data['df_raw1']['月份'])).month}月首登T0目标 · {total_budget:,.0f}万预算 · {target_month_label}")
         st.caption("蓝色看预算与结构，绿色看质量，橙色看成本，紫色看产出量。总计行会单独高亮。")
         target_preview_height = min(340, 52 + (len(target_preview_df) + 1) * 40) if not target_preview_df.empty else 220

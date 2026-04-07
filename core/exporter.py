@@ -209,7 +209,7 @@ def _style_table1_sheet(ws) -> None:
             try:
                 if cell.value:
                     max_length = max(max_length, len(str(cell.value)))
-            except:
+            except (TypeError, AttributeError):
                 pass
         # 设置列宽 (最小12, 最大30)
         adjusted_width = min(max(max_length + 2, 12), 30)
