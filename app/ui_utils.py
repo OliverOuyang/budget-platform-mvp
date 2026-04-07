@@ -305,24 +305,21 @@ def parse_channel_parameter_rows(df: pd.DataFrame) -> Tuple[Dict[str, float], Di
     channel_t0_cost: Dict[str, float] = {}
     channel_budget_shares: Dict[str, float] = {}
 
+    def _safe(val, default=0.0):
+        if val is None:
+            return default
+        try:
+            f = float(val)
+            return default if pd.isna(f) else f
+        except (ValueError, TypeError):
+            return default
+
     for row in df.to_dict("records"):
         channel_name = row["渠道"]
-        try:
-            channel_budget_shares[channel_name] = max(float(row["目标花费结构(%)"] or 0), 0.0) / 100
-        except (ValueError, TypeError):
-            channel_budget_shares[channel_name] = 0.0
-        try:
-            channel_1_3_rate[channel_name] = max(float(row["目标1-3过件率(%)"] or 0), 0.0) / 100
-        except (ValueError, TypeError):
-            channel_1_3_rate[channel_name] = 0.0
-        try:
-            channel_1_8_cps[channel_name] = max(float(row["目标CPS(%)"] or 0), 0.0) / 100
-        except (ValueError, TypeError):
-            channel_1_8_cps[channel_name] = 0.0
-        try:
-            channel_t0_cost[channel_name] = max(float(row["历史T0申完成本(元)"] or 0), 0.0)
-        except (ValueError, TypeError):
-            channel_t0_cost[channel_name] = 0.0
+        channel_budget_shares[channel_name] = max(_safe(row["目标花费结构(%)"]), 0.0) / 100
+        channel_1_3_rate[channel_name] = max(_safe(row["目标1-3过件率(%)"]), 0.0) / 100
+        channel_1_8_cps[channel_name] = max(_safe(row["目标CPS(%)"]), 0.0) / 100
+        channel_t0_cost[channel_name] = max(_safe(row["历史T0申完成本(元)"]), 0.0)
 
     total_share = sum(channel_budget_shares.values())
     if total_share > 0:

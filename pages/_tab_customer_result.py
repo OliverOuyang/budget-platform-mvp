@@ -29,13 +29,13 @@ def render_tab_customer_result():
                     t2.existing_initial_m0, t2.non_initial_credit],
             title="整体首借交易额构成",
             hole=0.5,
-            color_discrete_sequence=["#4C6EF5", "#12B886", "#F59F00", "#E64980"]
+            color_discrete_sequence=["#7C3AED", "#22C55E", "#F97316", "#E64980"]
         )
         fig_donut.update_traces(
             textposition='inside', textinfo='percent+value',
             hovertemplate='%{label}<br>%{percent}<br>%{value:.2f}亿<extra></extra>'
         )
-        st.plotly_chart(fig_donut, width='stretch')
+        st.plotly_chart(fig_donut, use_container_width=True)
 
     with chart_col2:
         segments = ["当月首登", "存量首登", "非初审"]
@@ -47,11 +47,11 @@ def render_tab_customer_result():
         ]
         fig_eff = make_subplots(specs=[[{"secondary_y": True}]])
         fig_eff.add_trace(go.Bar(x=segments, y=expenses, name="花费(万元)", marker_color="#4C6EF5"), secondary_y=False)
-        fig_eff.add_trace(go.Bar(x=segments, y=transactions, name="交易额(千万元)", marker_color="#12B886"), secondary_y=True)
+        fig_eff.add_trace(go.Bar(x=segments, y=transactions, name="交易额(千万元)", marker_color="#7C3AED"), secondary_y=True)
         fig_eff.update_layout(title="各客群花费与交易额对比", barmode='group')
         fig_eff.update_yaxes(title_text="花费(万元)", secondary_y=False)
         fig_eff.update_yaxes(title_text="交易额(千万元)", secondary_y=True)
-        st.plotly_chart(fig_eff, width='stretch')
+        st.plotly_chart(fig_eff, use_container_width=True)
 
     st.subheader("📋 客群CPS效率对比")
     eff_data = []
@@ -88,7 +88,7 @@ def render_tab_customer_result():
         "CPS": f"{t2.total_cps:.2%}",
         "效率": "基准"
     })
-    st.dataframe(pd.DataFrame(eff_data), width='stretch', hide_index=True)
+    st.dataframe(pd.DataFrame(eff_data), use_container_width=True, hide_index=True)
 
     st.subheader("💡 客群分析结论")
     st.info(

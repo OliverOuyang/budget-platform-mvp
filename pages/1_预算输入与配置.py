@@ -83,10 +83,10 @@ def _render_upload_diagnostics(df_raw1: pd.DataFrame, df_raw2: pd.DataFrame, fil
         preview_col1, preview_col2 = st.columns(2)
         with preview_col1:
             st.caption("raw_达成情况")
-            st.dataframe(df_raw1.head(10), width="stretch", hide_index=True)
+            st.dataframe(df_raw1.head(10), use_container_width=True, hide_index=True)
         with preview_col2:
             st.caption("raw_客群首借金额")
-            st.dataframe(df_raw2.head(10), width="stretch", hide_index=True)
+            st.dataframe(df_raw2.head(10), use_container_width=True, hide_index=True)
 
     with tabs[1]:
         render_section_intro("结构质量", "这里主要看缺失率、重复记录和两张表的时间对齐情况。")
@@ -112,7 +112,7 @@ def _render_upload_diagnostics(df_raw1: pd.DataFrame, df_raw2: pd.DataFrame, fil
         if quality_rows:
             st.dataframe(
                 pd.DataFrame(quality_rows).sort_values(["缺失率(%)", "数据表"], ascending=[False, True]),
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
                 column_config={"缺失率(%)": st.column_config.NumberColumn(format="%.2f%%")},
             )
@@ -126,14 +126,14 @@ def _render_upload_diagnostics(df_raw1: pd.DataFrame, df_raw2: pd.DataFrame, fil
             numeric_cols_raw1 = df_raw1.select_dtypes(include="number")
             if not numeric_cols_raw1.empty:
                 st.markdown("**raw_达成情况数值字段统计**")
-                st.dataframe(numeric_cols_raw1.describe().T.round(4), width="stretch")
+                st.dataframe(numeric_cols_raw1.describe().T.round(4), use_container_width=True)
             else:
                 st.info("raw_达成情况暂无可统计的数值字段。")
         with stats_right:
             numeric_cols_raw2 = df_raw2.select_dtypes(include="number")
             if not numeric_cols_raw2.empty:
                 st.markdown("**raw_客群首借金额数值字段统计**")
-                st.dataframe(numeric_cols_raw2.describe().T.round(4), width="stretch")
+                st.dataframe(numeric_cols_raw2.describe().T.round(4), use_container_width=True)
             else:
                 st.info("raw_客群首借金额暂无可统计的数值字段。")
 

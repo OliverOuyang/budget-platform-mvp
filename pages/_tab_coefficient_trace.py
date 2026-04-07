@@ -14,7 +14,7 @@ def render_tab_coefficient_trace():
                 "月份": coef.m0_t0_source_months,
                 "M0/T0系数": coef.m0_t0_ratio_history
             })
-            st.dataframe(df_m0t0, width='stretch', hide_index=True)
+            st.dataframe(df_m0t0, use_container_width=True, hide_index=True)
         else:
             st.info("暂无M0/T0系数历史数据")
     with tr2:
@@ -24,7 +24,7 @@ def render_tab_coefficient_trace():
                 "月份": coef.existing_m0_source_months,
                 "CPS": coef.existing_m0_cps_history
             })
-            st.dataframe(df_cps, width='stretch', hide_index=True)
+            st.dataframe(df_cps, use_container_width=True, hide_index=True)
         else:
             st.info("暂无存量CPS历史数据")
     _render_impact_analysis()

@@ -15,7 +15,7 @@ def render_tab_channel_result():
     st.subheader("📊 Table 1 (渠道预测)")
     st.dataframe(
         t1.to_dataframe(),
-        width='stretch',
+        use_container_width=True,
         hide_index=True,
         column_config={
             "渠道名称": st.column_config.TextColumn("渠道", width="small"),
@@ -39,19 +39,20 @@ def render_tab_channel_result():
         fig_expense = px.pie(
             names=[ch.channel_name for ch in channels],
             values=[ch.expense for ch in channels],
-            title="各渠道花费占比", hole=0.4
+            title="各渠道花费占比", hole=0.4,
+            color_discrete_sequence=["#4C6EF5", "#7C3AED", "#22C55E", "#F97316", "#E64980", "#06B6D4", "#8B5CF6"]
         )
         fig_expense.update_traces(
             textposition='inside', textinfo='percent+label',
             hovertemplate='<b>%{label}</b><br>花费: %{value:,.0f}万<br>占比: %{percent}<extra></extra>'
         )
-        st.plotly_chart(fig_expense, width='stretch')
+        st.plotly_chart(fig_expense, use_container_width=True)
 
     with col_b:
         fig_tx = px.bar(
             x=[ch.channel_name for ch in channels],
             y=[ch.t0_transaction * 10 for ch in channels],
-            title="T0交易额(千万元)", color_discrete_sequence=['#2E86AB']
+            title="T0交易额(千万元)", color_discrete_sequence=['#7C3AED']
         )
         fig_tx.update_traces(
             textposition='outside',
@@ -59,14 +60,14 @@ def render_tab_channel_result():
             hovertemplate='<b>%{x}</b><br>T0交易额: %{y:.2f}千万元<extra></extra>'
         )
         fig_tx.update_layout(uniformtext_minsize=10, uniformtext_mode='show')
-        st.plotly_chart(fig_tx, width='stretch')
+        st.plotly_chart(fig_tx, use_container_width=True)
 
     col_c, col_d = st.columns(2)
     with col_c:
         fig_comp = px.bar(
             x=[ch.channel_name for ch in channels],
             y=[ch.t0_completion_volume for ch in channels],
-            title="T0申完量", color_discrete_sequence=['#A23B72']
+            title="T0申完量", color_discrete_sequence=['#7C3AED']
         )
         fig_comp.update_traces(
             textposition='outside',
@@ -74,13 +75,13 @@ def render_tab_channel_result():
             hovertemplate='<b>%{x}</b><br>申完量: %{y:,.0f}笔<extra></extra>'
         )
         fig_comp.update_layout(uniformtext_minsize=10, uniformtext_mode='show')
-        st.plotly_chart(fig_comp, width='stretch')
+        st.plotly_chart(fig_comp, use_container_width=True)
 
     with col_d:
         fig_appr = px.bar(
             x=[ch.channel_name for ch in channels],
             y=[ch.approval_rate_1_3 * 100 for ch in channels],
-            title="1-3 T0过件率(%)", color_discrete_sequence=['#F18F01']
+            title="1-3 T0过件率(%)", color_discrete_sequence=['#22C55E']
         )
         fig_appr.update_traces(
             textposition='outside',
@@ -88,7 +89,7 @@ def render_tab_channel_result():
             hovertemplate='<b>%{x}</b><br>过件率: %{y:.1f}%<extra></extra>'
         )
         fig_appr.update_layout(uniformtext_minsize=10, uniformtext_mode='show')
-        st.plotly_chart(fig_appr, width='stretch')
+        st.plotly_chart(fig_appr, use_container_width=True)
 
     st.markdown("---")
     st.subheader("💡 渠道指标明细")
@@ -145,8 +146,8 @@ def render_tab_channel_result():
         eff_data.append({"渠道": ch.channel_name, "万元效率(千元/万元)": eff})
     eff_df = pd.DataFrame(eff_data).sort_values("万元效率(千元/万元)", ascending=False)
     fig_rank = px.bar(eff_df, x="渠道", y="万元效率(千元/万元)", color="万元效率(千元/万元)",
-                      title="各渠道万元效率（越高越好）", color_continuous_scale="Greens")
+                      title="各渠道万元效率（越高越好）", color_continuous_scale=[[0, "#eff6ff"], [1, "#4C6EF5"]])
     fig_rank.update_layout(showlegend=False)
-    st.plotly_chart(fig_rank, width='stretch')
+    st.plotly_chart(fig_rank, use_container_width=True)
 
     st.success(f"🏆 效率冠军: {best_ch.channel_name} — 每万元花费产生T0交易额 {best_eff:.2f}千元，优于最差渠道 {worst_eff:.2f}千元")

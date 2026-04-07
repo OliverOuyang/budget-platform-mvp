@@ -150,12 +150,9 @@ class Table2Result:
     total_cps: float = 0.0           # 全业务CPS（小数，0.3=30%）
     approval_rate_1_3_excl_age: float = 0.0  # 1-3组T0过件率(排年龄，加权平均)
 
-    def to_dataframe(self) -> pd.DataFrame:
-        """
-        转换为 DataFrame（层级展示，多列分离单位）
-        列：指标名称 | 交易额(亿元) | 花费(万元) | 效率指标
-        """
-        rows = [
+    def _build_rows(self) -> list:
+        """共享行定义，供 to_dataframe() 和 to_html() 共同使用。"""
+        return [
             {
                 '指标': '整体首借交易额',
                 '交易额(亿元)': f"{self.total_transaction:.2f}",
@@ -241,6 +238,13 @@ class Table2Result:
                 '层级': 1,
             },
         ]
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """
+        转换为 DataFrame（层级展示，多列分离单位）
+        列：指标名称 | 交易额(亿元) | 花费(万元) | 效率指标
+        """
+        rows = self._build_rows()
         return pd.DataFrame(rows)
 
     def to_html(self) -> str:
@@ -262,20 +266,7 @@ class Table2Result:
                 return ''
             return html.escape(str(val))
 
-        rows = [
-            {"指标": "整体首借交易额", "交易额(亿元)": f"{self.total_transaction:.2f}", "花费(万元)": f"{self.total_expense:,.0f}", "效率指标": f"全业务CPS={self.total_cps:.2%}", "层级": 0},
-            {"指标": "  1) 初审授信户首借交易额", "交易额(亿元)": f"{self.initial_credit_total:.2f}", "花费(万元)": "", "效率指标": "", "层级": 1},
-            {"指标": "    ① 当月首登初审M0交易额", "交易额(亿元)": f"{self.current_month_initial_m0:.2f}", "花费(万元)": "", "效率指标": "", "层级": 2},
-            {"指标": "      首登T0交易额", "交易额(亿元)": f"{self.first_login_t0:.2f}", "花费(万元)": "", "效率指标": "", "层级": 3},
-            {"指标": "    ② 存量首登初审M0交易额", "交易额(亿元)": f"{self.existing_initial_m0:.2f}", "花费(万元)": f"{self.calculated_existing_m0_expense:,.0f}", "效率指标": "", "层级": 2},
-            {"指标": "  2) 非初审授信户首借交易额", "交易额(亿元)": f"{self.non_initial_credit:.2f}", "花费(万元)": "", "效率指标": "", "层级": 1},
-            {"指标": "─── 费用汇总 ───", "交易额(亿元)": "", "花费(万元)": "", "效率指标": "", "层级": -1},
-            {"指标": "  投放花费", "交易额(亿元)": "", "花费(万元)": f"{self.total_expense:,.0f}", "效率指标": "", "层级": 1},
-            {"指标": "  RTA费用+促申完", "交易额(亿元)": "", "花费(万元)": f"{self.rta_promotion_fee:,.0f}", "效率指标": "", "层级": 1},
-            {"指标": "─── 效率指标 ───", "交易额(亿元)": "", "花费(万元)": "", "效率指标": "", "层级": -1},
-            {"指标": "  全业务CPS", "交易额(亿元)": "", "花费(万元)": "", "效率指标": f"{self.total_cps:.2%}", "层级": 1},
-            {"指标": "  1-3组T0过件率（排年龄）", "交易额(亿元)": "", "花费(万元)": "", "效率指标": f"{self.approval_rate_1_3_excl_age:.1%}", "层级": 1},
-        ]
+        rows = self._build_rows()
 
         html_out = """<table style="width:100%; border-collapse:collapse;">"""
         html_out += """<tr style="background:#f5f5f5;">

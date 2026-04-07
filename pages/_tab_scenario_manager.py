@@ -64,7 +64,7 @@ def _render_scenario_comparison():
                         "全业务CPS(%)": s["table2"].total_cps,
                         "保存说明": s.get("decision_note", s.get("description", "")),
                     })
-                st.dataframe(pd.DataFrame(comp_data), width='stretch', hide_index=True)
+                st.dataframe(pd.DataFrame(comp_data), use_container_width=True, hide_index=True)
         else:
             st.info("暂无保存场景")
 

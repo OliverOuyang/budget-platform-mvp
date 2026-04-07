@@ -33,17 +33,28 @@ from core.data_loader import extract_last_month_data
 from core.models import BudgetParameters
 
 
+def _safe_num(val, default=0.0):
+    """Return float(val) if val is a finite number, else default."""
+    if val is None:
+        return default
+    try:
+        f = float(val)
+        return default if pd.isna(f) else f
+    except (ValueError, TypeError):
+        return default
+
+
 def _build_latest_share_rows(last_month: dict[str, dict]) -> list[dict]:
-    total_expense_raw = sum((item.get("花费") or 0) for item in last_month.values())
+    total_expense_raw = sum(_safe_num(item.get("花费")) for item in last_month.values())
     rows = []
     for channel_name, item in last_month.items():
-        expense = float(item.get("花费") or 0)
+        expense = _safe_num(item.get("花费"))
         rows.append(
             {
                 "渠道": channel_name,
-                "历史过件率(%)": float(item.get("1-3t0过件率") or 0) * 100,
-                "历史CPS(%)": float(item.get("1-8t0cps") or 0) * 100,
-                "历史申完成本(元)": float(item.get("t0申完成本") or 0),
+                "历史过件率(%)": _safe_num(item.get("1-3t0过件率")) * 100,
+                "历史CPS(%)": _safe_num(item.get("1-8t0cps")) * 100,
+                "历史申完成本(元)": _safe_num(item.get("t0申完成本")),
                 "历史花费结构(%)": (expense / total_expense_raw * 100) if total_expense_raw else 0.0,
             }
         )
@@ -706,15 +717,15 @@ def _render_parameter_panel() -> bool:
             )
         else:
             st.info("历史月份不足，暂时无法生成达成与预估表。")
-    hist_total_budget = sum(item.get("花费", 0) for item in last_month.values()) / 10000 if last_month else 0
+    hist_total_budget = sum(_safe_num(item.get("花费")) for item in last_month.values()) / 10000 if last_month else 0
     baseline_approval = (
-        sum((item.get("1-3t0过件率") or 0) for item in last_month.values()) / len(last_month) if last_month else 0.0
+        sum(_safe_num(item.get("1-3t0过件率")) for item in last_month.values()) / len(last_month) if last_month else 0.0
     )
     baseline_cps = (
-        sum((item.get("1-8t0cps") or 0) for item in last_month.values()) / len(last_month) if last_month else 0.0
+        sum(_safe_num(item.get("1-8t0cps")) for item in last_month.values()) / len(last_month) if last_month else 0.0
     )
     baseline_cost = (
-        sum((item.get("t0申完成本") or 0) for item in last_month.values()) / len(last_month) if last_month else 0.0
+        sum(_safe_num(item.get("t0申完成本")) for item in last_month.values()) / len(last_month) if last_month else 0.0
     )
     with st.container(border=True):
         render_section_header("推荐操作顺序", "按这个顺序往下走，改完参数后只需要继续往下看“当前目标拆解表”和“计算确认”即可。")

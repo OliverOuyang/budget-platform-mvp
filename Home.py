@@ -84,8 +84,6 @@ with st.sidebar:
 **T0申完成本**：每笔申请完成所需花费（元）
         """)
     st.markdown("---")
-    st.markdown("[← 返回 React 介绍页](http://localhost:3000)")
-    st.caption("http://localhost:3000")
     st.markdown("---")
     st.caption("© 2026 信贷获客预算管理平台")
 

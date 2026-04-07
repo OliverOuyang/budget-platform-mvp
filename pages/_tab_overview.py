@@ -59,10 +59,13 @@ def render_tab_overview():
         if "月份标签" in df_n.columns and "渠道名称" in df_n.columns:
             st.subheader("📈 关键指标按月趋势")
 
-            monthly_rate = df_n.groupby("月份标签").apply(
-                lambda g: (g["1-3t0过件率"] * g["非年龄拒绝申完量"]).sum() /
-                          g["非年龄拒绝申完量"].sum() if g["非年龄拒绝申完量"].sum() > 0 else np.nan
-            ).reset_index()
+            def _weighted_approval_rate(g):
+                total_weight = g["非年龄拒绝申完量"].sum()
+                if total_weight > 0:
+                    return (g["1-3t0过件率"] * g["非年龄拒绝申完量"]).sum() / total_weight
+                return np.nan
+
+            monthly_rate = df_n.groupby("月份标签").apply(_weighted_approval_rate, include_groups=False).reset_index()
             monthly_rate.columns = ["月份", "1-3 T0过件率"]
             monthly_rate = monthly_rate.dropna().sort_values("月份")
 
@@ -80,23 +83,23 @@ def render_tab_overview():
             with r1:
                 fig1 = px.line(monthly_rate, x="月份", y="1-3 T0过件率", markers=True)
                 fig1.update_layout(height=280, margin=dict(l=20, r=20, t=20, b=20))
-                st.plotly_chart(fig1, width='stretch')
+                st.plotly_chart(fig1, use_container_width=True)
             with r2:
                 fig2 = px.line(monthly_exp, x="月份", y="花费(万元)", markers=True)
                 fig2.update_layout(height=280, margin=dict(l=20, r=20, t=20, b=20))
-                st.plotly_chart(fig2, width='stretch')
+                st.plotly_chart(fig2, use_container_width=True)
 
             r3, r4 = st.columns(2)
             with r3:
                 fig3 = px.line(monthly_t0, x="月份", y="T0交易额(亿元)", markers=True)
                 fig3.update_layout(height=280, margin=dict(l=20, r=20, t=20, b=20))
-                st.plotly_chart(fig3, width='stretch')
+                st.plotly_chart(fig3, use_container_width=True)
             with r4:
                 merged = monthly_exp.merge(monthly_t0, on="月份")
                 merged["全业务CPS"] = merged["花费(万元)"] / (merged["T0交易额(亿元)"] * 1e4)
                 fig4 = px.line(merged, x="月份", y="全业务CPS", markers=True)
                 fig4.update_layout(height=280, margin=dict(l=20, r=20, t=20, b=20))
-                st.plotly_chart(fig4, width='stretch')
+                st.plotly_chart(fig4, use_container_width=True)
 
             # 定位图
             st.subheader("📍 当前预算方案在历史趋势中的定位")
@@ -116,7 +119,7 @@ def render_tab_overview():
                     title=f"花费趋势 + 当前方案定位（最新月: {latest_exp:,.0f}万 → 当前: {current_exp:,.0f}万）",
                     height=260, margin=dict(l=20, r=20, t=40, b=20), showlegend=True
                 )
-                st.plotly_chart(fig_pos, width='stretch')
+                st.plotly_chart(fig_pos, use_container_width=True)
                 exp_vs_hist = (current_exp - latest_exp) / latest_exp * 100 if latest_exp > 0 else 0
                 st.info(
                     f"📌 当前方案花费**{current_exp:,.0f}万**，较最新月历史数据"
@@ -161,7 +164,7 @@ def _render_scenario_comparison():
                 "全业务CPS": f"{t2s.total_cps:.2%}",
                 "1-3 T0过件率": f"{t2s.approval_rate_1_3_excl_age:.2%}",
             })
-        st.dataframe(pd.DataFrame(comp_rows), width='stretch', hide_index=True)
+        st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
         if best_name is not None:
             best = scenarios[best_name]
             tradeoff = "规模提升，但 CPS 压力更大"
@@ -207,7 +210,7 @@ def _render_scenario_comparison():
                             "T0交易额差(千万元)": f"{t0_diff * 10:+.2f}",
                         })
         if ch_rows:
-            st.dataframe(pd.DataFrame(ch_rows), width='stretch', hide_index=True)
+            st.dataframe(pd.DataFrame(ch_rows), use_container_width=True, hide_index=True)
             st.caption("💡 花费差>0表示当前方案该渠道分配更多预算；T0交易额差由渠道1-3过件率和1-8 CPS参数共同决定。")
         else:
             st.caption("各渠道参数与保存方案无显著差异。")
@@ -219,10 +222,13 @@ def _render_insights(df_n):
     """数据洞察（内联）"""
     st.subheader("💡 数据洞察")
     if "月份标签" in df_n.columns:
-        monthly_rate = df_n.groupby("月份标签").apply(
-            lambda g: (g["1-3t0过件率"] * g["非年龄拒绝申完量"]).sum() /
-                      g["非年龄拒绝申完量"].sum() if g["非年龄拒绝申完量"].sum() > 0 else np.nan
-        ).reset_index()
+        def _weighted_approval_rate_insights(g):
+            total_weight = g["非年龄拒绝申完量"].sum()
+            if total_weight > 0:
+                return (g["1-3t0过件率"] * g["非年龄拒绝申完量"]).sum() / total_weight
+            return np.nan
+
+        monthly_rate = df_n.groupby("月份标签").apply(_weighted_approval_rate_insights, include_groups=False).reset_index()
         monthly_rate.columns = ["月份", "1-3 T0过件率"]
         monthly_rate = monthly_rate.dropna()
         if len(monthly_rate) >= 2:

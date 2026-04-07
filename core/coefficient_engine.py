@@ -35,16 +35,11 @@ def calculate_m0_t0_coefficient(df: pd.DataFrame, months: int = M0_T0_COEFFICIEN
     # 取最近N个月
     df_recent = df_monthly.head(months)
 
-    # 计算每月比值
-    ratios = []
-    for _, row in df_recent.iterrows():
-        m0_amount = row['1_8m0首登当月首借24h借款金额']
-        t0_amount = row['1-8t0首借24h借款金额']
-
-        # 处理除零和NaN
-        if pd.notna(t0_amount) and pd.notna(m0_amount) and t0_amount > 0:
-            ratio = m0_amount / t0_amount
-            ratios.append(ratio)
+    # 计算每月比值 (vectorized)
+    m0 = df_recent['1_8m0首登当月首借24h借款金额']
+    t0 = df_recent['1-8t0首借24h借款金额']
+    valid = pd.notna(t0) & pd.notna(m0) & (t0 > 0)
+    ratios = (m0[valid] / t0[valid]).tolist()
 
     # 计算均值
     if len(ratios) == 0:
@@ -112,29 +107,6 @@ def calculate_existing_m0_cps(
     cps_avg = np.mean(cps_list)
 
     return cps_avg, cps_list
-
-
-def extrapolate_by_days(current_value: float, days_elapsed: int, total_days: int) -> float:
-    """
-    基于天数平推
-
-    Args:
-        current_value: 当前累计值
-        days_elapsed: 已完成天数
-        total_days: 当月总天数
-
-    Returns:
-        平推后的月度预估值
-    """
-    if days_elapsed <= 0:
-        return 0.0
-
-    if days_elapsed >= total_days:
-        return current_value
-
-    extrapolated_value = current_value * (total_days / days_elapsed)
-
-    return extrapolated_value
 
 
 def calculate_all_coefficients(
