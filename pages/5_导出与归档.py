@@ -53,8 +53,25 @@ with st.container(border=True):
         st.markdown("**双引擎对照表**")
         st.caption("V01 vs MMM 渠道级对比")
     with col_btn2:
-        st.button("导出", key="export_dual", use_container_width=True, disabled=True,
-                   help="训练 MMM 模型后可用")
+        mmm_spends = st.session_state.get("mmm_v01_recommended_spends")
+        mmm_loan = st.session_state.get("mmm_predicted_loan_amt", 0)
+        if table1 is not None and mmm_spends:
+            try:
+                from core.exporter import export_dual_engine
+                buf2 = io.BytesIO()
+                export_dual_engine(table1, mmm_spends, mmm_loan, buf2)
+                st.download_button(
+                    "导出", key="export_dual",
+                    data=buf2.getvalue(),
+                    file_name="双引擎对照表.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+            except Exception:
+                st.button("导出", key="export_dual", use_container_width=True, disabled=True)
+        else:
+            st.button("导出", key="export_dual", use_container_width=True, disabled=True,
+                       help="训练 MMM 模型后可用")
 
     st.markdown("---")
 
@@ -66,8 +83,19 @@ with st.container(border=True):
         st.markdown("**计算逻辑文档**")
         st.caption("导出计算手册，含全部公式和参数说明")
     with col_btn3:
-        st.button("导出", key="export_logic", use_container_width=True, disabled=True,
-                   help="功能开发中")
+        try:
+            from core.exporter import export_logic_document
+            buf3 = io.BytesIO()
+            export_logic_document(buf3)
+            st.download_button(
+                "导出", key="export_logic",
+                data=buf3.getvalue(),
+                file_name="计算逻辑文档.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+        except Exception:
+            st.button("导出", key="export_logic", use_container_width=True, disabled=True)
 
     st.markdown("---")
 
@@ -80,9 +108,23 @@ with st.container(border=True):
         st.caption("模型参数 + 饱和曲线 + 优化建议")
     with col_btn4:
         mmm_model = st.session_state.get("mmm_model")
-        st.button("导出", key="export_mmm", use_container_width=True,
-                   disabled=mmm_model is None,
-                   help="训练 MMM 模型后可用" if mmm_model is None else "")
+        if mmm_model is not None:
+            try:
+                from core.exporter import export_mmm_report
+                buf4 = io.BytesIO()
+                export_mmm_report(mmm_model, buf4)
+                st.download_button(
+                    "导出", key="export_mmm",
+                    data=buf4.getvalue(),
+                    file_name="MMM模型报告.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+            except Exception:
+                st.button("导出", key="export_mmm", use_container_width=True, disabled=True)
+        else:
+            st.button("导出", key="export_mmm", use_container_width=True, disabled=True,
+                       help="训练 MMM 模型后可用")
 
 # ==================== 操作日志 ====================
 with st.expander("📝 操作日志", expanded=False):

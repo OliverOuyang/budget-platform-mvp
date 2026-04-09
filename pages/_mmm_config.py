@@ -300,9 +300,10 @@ def render_mmm_config(df_container: dict):
         if cached and cached.is_fitted:
             model = cached
             st.session_state["mmm_model"] = model
+            _load_rssd = getattr(model, 'decomp_rssd', None)
             st.success(
                 f"模型已加载 | R²={model.r_squared:.4f} | "
-                f"NRMSE={model.nrmse:.4f} | DecompRSSD={model.decomp_rssd:.4f}"
+                f"NRMSE={model.nrmse:.4f}" + (f" | DecompRSSD={_load_rssd:.4f}" if _load_rssd else "")
             )
         else:
             st.warning("未找到已有模型文件，请先训练。")
@@ -319,23 +320,40 @@ def render_mmm_config(df_container: dict):
                 _label = "MCMC 采样" if engine_type == "bayesian" else "Optuna 优化"
                 progress_bar.progress(min(p, 1.0), text=f"{_label}进度：{p*100:.0f}%")
 
-            with st.spinner(f"贝叶斯优化中（{n_trials} 次迭代），请稍候..."):
-                trainer = MMMTrainer(df, dv_col=dv_col, n_trials=n_trials,
-                                     adstock_type=adstock_type,
-                                     train_weeks=train_weeks,
-                                     use_interactions=use_interactions,
-                                     regularization=regularization)
+            if engine_type == "bayesian":
+                _spinner_text = f"PyMC MCMC 采样中（{n_draws} draws + {n_tune} tune），请稍候..."
+            else:
+                _spinner_text = f"Optuna 优化中（{n_trials} 次迭代），请稍候..."
+
+            with st.spinner(_spinner_text):
+                if engine_type == "bayesian":
+                    trainer = create_trainer(
+                        engine_type, df, dv_col=dv_col,
+                        adstock_type=adstock_type,
+                        draws=n_draws, tune=n_tune,
+                        train_weeks=train_weeks,
+                    )
+                else:
+                    trainer = create_trainer(
+                        engine_type, df, dv_col=dv_col,
+                        n_trials=n_trials,
+                        adstock_type=adstock_type,
+                        train_weeks=train_weeks,
+                        use_interactions=use_interactions,
+                        regularization=regularization,
+                    )
                 model = trainer.fit(progress_callback=_update_progress)
                 save_model(model)
                 st.session_state["mmm_model"] = model
                 st.session_state["mmm_trainer"] = trainer
             progress_bar.progress(1.0, text="训练完成！")
+            _decomp_rssd = getattr(model, 'decomp_rssd', None)
             st.success(
-                f"训练完成 | R²(train)={model.r_squared:.4f} | R²(test/CV)={model.test_r_squared:.4f} | "
-                f"NRMSE={model.nrmse:.4f} | DecompRSSD={model.decomp_rssd:.4f}"
+                f"训练完成 | R²(train)={model.r_squared:.4f} | R²(test)={model.test_r_squared:.4f} | "
+                f"NRMSE={model.nrmse:.4f}" + (f" | DecompRSSD={_decomp_rssd:.4f}" if _decomp_rssd else "")
             )
-            # Show Pareto candidates
-            if model.pareto_results:
+            # Show Pareto candidates (Legacy only)
+            if getattr(model, 'pareto_results', None):
                 with st.expander("Pareto 候选模型"):
                     pareto_df = pd.DataFrame(model.pareto_results)
                     display_cols = ["study_idx", "r_squared", "nrmse", "decomp_rssd", "test_r_squared", "cv_test_r_squared", "combined"]
@@ -373,7 +391,7 @@ def render_mmm_config(df_container: dict):
             with st.expander("💾 保存模型到模型库", expanded=False):
                 _save_name = st.text_input(
                     "模型名称",
-                    value=f"{dv_col}_{adstock_type}_{n_trials}t",
+                    value=f"{dv_col}_{engine_type}_{adstock_type}",
                     key="save_model_name",
                 )
                 if st.button("保存到模型库", key="save_to_registry", type="primary"):

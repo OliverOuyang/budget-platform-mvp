@@ -276,3 +276,229 @@ def _style_table2_sheet(ws) -> None:
 
     # 冻结首行
     ws.freeze_panes = "A2"
+
+
+# ─────────────────────────────────────────────
+# 双引擎对照表
+# ─────────────────────────────────────────────
+
+def export_dual_engine(table1, mmm_spends: dict, mmm_loan_amt: float, output):
+    """V01 vs MMM 渠道级对比 Excel。
+
+    Parameters
+    ----------
+    table1 : Table1Result from V01 pipeline
+    mmm_spends : dict[channel_name, recommended_spend_万元]
+    mmm_loan_amt : float, MMM predicted total loan amount (万元)
+    output : file path or BytesIO
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "渠道对比"
+
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin"),
+    )
+
+    headers = ["渠道", "V01花费(万元)", "MMM花费(万元)", "花费差异(万元)",
+               "V01 T0交易额(千万元)", "V01 CPS"]
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    channels = [ch for ch in table1.channels if ch.channel_name != "总计"]
+    for row_idx, ch in enumerate(channels, 2):
+        mmm_spend = mmm_spends.get(ch.channel_name, 0)
+        ws.cell(row=row_idx, column=1, value=ch.channel_name)
+        ws.cell(row=row_idx, column=2, value=round(ch.expense, 0))
+        ws.cell(row=row_idx, column=3, value=round(mmm_spend, 0))
+        ws.cell(row=row_idx, column=4, value=round(mmm_spend - ch.expense, 0))
+        ws.cell(row=row_idx, column=5, value=round(ch.t0_transaction * 10, 2))
+        ws.cell(row=row_idx, column=6, value=f"{(ch.cps_1_8 or 0):.2%}")
+
+    # Summary row
+    sum_row = len(channels) + 2
+    ws.cell(row=sum_row, column=1, value="合计").font = Font(bold=True)
+    ws.cell(row=sum_row, column=2, value=round(table1.total_expense, 0))
+    ws.cell(row=sum_row, column=3, value=round(sum(mmm_spends.values()), 0))
+    ws.cell(row=sum_row, column=4, value=round(sum(mmm_spends.values()) - table1.total_expense, 0))
+
+    for row in ws.iter_rows(min_row=1, max_row=sum_row, max_col=len(headers)):
+        for cell in row:
+            cell.border = thin_border
+
+    for col_letter in ["A", "B", "C", "D", "E", "F"]:
+        ws.column_dimensions[col_letter].width = 18
+    ws.freeze_panes = "A2"
+
+    wb.save(output)
+
+
+# ─────────────────────────────────────────────
+# 计算逻辑文档
+# ─────────────────────────────────────────────
+
+def export_logic_document(output):
+    """导出 V01 计算逻辑手册 (3 sheets)。"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+
+    wb = Workbook()
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin"),
+    )
+
+    def _write_sheet(ws, headers, rows):
+        for col_idx, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_idx, value=h)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+        for r_idx, row_data in enumerate(rows, 2):
+            for c_idx, val in enumerate(row_data, 1):
+                ws.cell(row=r_idx, column=c_idx, value=val)
+        for row in ws.iter_rows(min_row=1, max_row=len(rows) + 1, max_col=len(headers)):
+            for cell in row:
+                cell.border = thin_border
+        ws.freeze_panes = "A2"
+
+    # Sheet 1: 计算流程
+    ws1 = wb.active
+    ws1.title = "计算流程"
+    _write_sheet(ws1, ["步骤", "名称", "公式", "说明"], [
+        ["①", "预算分配", "渠道花费 = 总预算 × 渠道占比", "按花费结构分配"],
+        ["②", "申完量", "申完量 = 花费×10000 ÷ T0申完成本", "花费转化为申请完成量"],
+        ["③", "授信量", "授信量 = 申完量 × 1-3过件率", "申请中通过审核的数量"],
+        ["④", "T0交易额", "T0 = 花费 ÷ CPS ÷ 10000", "首借当天产生的交易额(亿元)"],
+        ["⑤", "M0交易额", "M0 = T0 × M0/T0系数", "首月累计交易额"],
+    ])
+    ws1.column_dimensions['A'].width = 8
+    ws1.column_dimensions['B'].width = 14
+    ws1.column_dimensions['C'].width = 40
+    ws1.column_dimensions['D'].width = 30
+
+    # Sheet 2: 参数定义
+    ws2 = wb.create_sheet("参数定义")
+    _write_sheet(ws2, ["参数名", "单位", "来源", "说明"], [
+        ["总预算", "万元", "用户输入", "当月总花费预算"],
+        ["渠道花费占比", "%", "用户输入", "各渠道花费占总预算比例"],
+        ["1-3 T0过件率", "%", "历史数据/用户输入", "非年龄拒绝口径的1-3天过件率"],
+        ["1-8 T0 CPS", "%", "历史数据/用户输入", "首借24h借款金额成本占比"],
+        ["T0申完成本", "元", "历史数据", "每笔申请完成的平均成本"],
+        ["M0/T0系数", "倍数", "历史计算", "M0与T0交易额的比值(6个月均值)"],
+        ["存量M0 CPS", "%", "历史计算", "存量首登客群的CPS(3/6月均值)"],
+        ["非初审交易额", "亿元", "用户输入", "非初审客群的预估交易额"],
+    ])
+    ws2.column_dimensions['A'].width = 18
+    ws2.column_dimensions['B'].width = 10
+    ws2.column_dimensions['C'].width = 20
+    ws2.column_dimensions['D'].width = 40
+
+    # Sheet 3: 指标层级
+    ws3 = wb.create_sheet("指标层级")
+    _write_sheet(ws3, ["层级", "指标", "计算方式"], [
+        ["Table1-渠道", "花费(千万元)", "总预算 × 渠道占比 ÷ 10000"],
+        ["Table1-渠道", "T0交易额(千万元)", "花费 ÷ CPS ÷ 10000 × 10"],
+        ["Table1-渠道", "M0交易额(千万元)", "T0 × M0/T0系数 × 10"],
+        ["Table1-渠道", "T0申完量", "花费×10000 ÷ T0申完成本"],
+        ["Table1-渠道", "1-3授信量", "申完量 × 1-3过件率"],
+        ["Table2-客群", "当月首登M0", "各渠道M0交易额汇总"],
+        ["Table2-客群", "存量首登M0", "存量M0费用 ÷ 存量CPS"],
+        ["Table2-客群", "总首借交易额", "初审M0 + 存量M0 + T0 + 非初审"],
+        ["Table2-客群", "全业务CPS", "总花费 ÷ 总首借交易额"],
+    ])
+    ws3.column_dimensions['A'].width = 14
+    ws3.column_dimensions['B'].width = 22
+    ws3.column_dimensions['C'].width = 40
+
+    wb.save(output)
+
+
+# ─────────────────────────────────────────────
+# MMM 模型报告
+# ─────────────────────────────────────────────
+
+def export_mmm_report(model, output):
+    """导出 MMM 模型质量报告 Excel。
+
+    Parameters
+    ----------
+    model : MMMModel from engine/mmm_engine.py
+    output : file path or BytesIO
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+
+    wb = Workbook()
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin"),
+    )
+
+    # Sheet 1: 模型质量
+    ws1 = wb.active
+    ws1.title = "模型质量"
+    metrics = [
+        ("训练R²", f"{model.r_squared:.4f}"),
+        ("测试R²", f"{model.test_r_squared:.4f}" if model.test_r_squared is not None else "N/A"),
+        ("NRMSE", f"{model.nrmse:.4f}"),
+        ("MAPE (Holdout)", f"{model.mape_holdout:.2%}" if model.mape_holdout is not None else "N/A"),
+        ("DW统计量", f"{model.dw_stat:.4f}" if model.dw_stat is not None else "N/A"),
+        ("截距", f"{model.intercept:.4f}"),
+    ]
+    for col_idx, h in enumerate(["指标", "值"], 1):
+        cell = ws1.cell(row=1, column=col_idx, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+    for r_idx, (name, val) in enumerate(metrics, 2):
+        ws1.cell(row=r_idx, column=1, value=name)
+        ws1.cell(row=r_idx, column=2, value=val)
+    for row in ws1.iter_rows(min_row=1, max_row=len(metrics) + 1, max_col=2):
+        for cell in row:
+            cell.border = thin_border
+    ws1.column_dimensions['A'].width = 20
+    ws1.column_dimensions['B'].width = 18
+    ws1.freeze_panes = "A2"
+
+    # Sheet 2: 渠道参数
+    ws2 = wb.create_sheet("渠道参数")
+    ch_headers = ["渠道", "Adstock类型", "Theta", "Alpha(Hill)", "Gamma(Hill)", "Beta", "重要度"]
+    for col_idx, h in enumerate(ch_headers, 1):
+        cell = ws2.cell(row=1, column=col_idx, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    importance = model.feature_importance or {}
+    for r_idx, (ch_name, cp) in enumerate(model.channel_params.items(), 2):
+        ws2.cell(row=r_idx, column=1, value=ch_name)
+        ws2.cell(row=r_idx, column=2, value=cp.adstock_type)
+        ws2.cell(row=r_idx, column=3, value=round(cp.theta, 4))
+        ws2.cell(row=r_idx, column=4, value=round(cp.alpha, 4))
+        ws2.cell(row=r_idx, column=5, value=round(cp.gamma, 4))
+        ws2.cell(row=r_idx, column=6, value=round(cp.beta, 6))
+        ws2.cell(row=r_idx, column=7, value=f"{importance.get(ch_name, 0):.2%}")
+
+    n_ch = len(model.channel_params)
+    for row in ws2.iter_rows(min_row=1, max_row=n_ch + 1, max_col=len(ch_headers)):
+        for cell in row:
+            cell.border = thin_border
+    for col_letter in ["A", "B", "C", "D", "E", "F", "G"]:
+        ws2.column_dimensions[col_letter].width = 16
+    ws2.freeze_panes = "A2"
+
+    wb.save(output)

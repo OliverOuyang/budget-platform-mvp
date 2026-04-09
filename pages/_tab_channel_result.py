@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from app.styles import CHART_COLORS, highlight_total_row
 
 
 # ─────────────────────────────────────────────
@@ -36,20 +37,15 @@ def _build_conclusions(channels, t1) -> list[str]:
     avg_eff = sum(effs.values()) / len(effs)
 
     lines = []
-    # 结论 a：效率最高
     lines.append(("✅", f"效率最高渠道：**{best_eff_name}**，万元效率 {best_eff_val:.2f} 千元/万元，显著优于其他渠道。"))
-
-    # 结论 b：CPS最低
     lines.append(("✅", f"成本最优渠道：**{best_cps_name}**，CPS 仅 {best_cps_val:.1f}%，获客成本最低。"))
 
-    # 结论 c：花费占比最大渠道效率评估
     eff_tag = "高于" if largest_eff >= avg_eff else "低于"
     icon_c = "✅" if largest_eff >= avg_eff else "⚠️"
     lines.append((icon_c,
         f"花费占比最大渠道：**{largest_share_name}**（占 {largest_share_pct:.1f}%），"
         f"万元效率 {largest_eff:.2f} 千元/万元，{eff_tag}平均水平 {avg_eff:.2f}。"))
 
-    # 结论 d：风险渠道
     risk_channels = []
     for ch in channels:
         cps_pct = (ch.cps_1_8 or 0) * 100
@@ -63,58 +59,6 @@ def _build_conclusions(channels, t1) -> list[str]:
         lines.append(("✅", "各渠道CPS和花费占比分布均衡，整体投放结构健康。"))
 
     return lines
-
-
-def _style_table(df: pd.DataFrame) -> "pd.io.formats.style.Styler":
-    """对Table1 DataFrame应用条件格式"""
-    styled = df.style
-
-    # 总计行加粗灰底
-    total_row_idx = df[df["渠道名称"] == "总计"].index.tolist()
-
-    def highlight_total(row):
-        if row.name in total_row_idx:
-            return ["background-color: #f0f0f0; font-weight: bold"] * len(row)
-        return [""] * len(row)
-
-    styled = styled.apply(highlight_total, axis=1)
-
-    # CPS列渐变色：值越低越绿，越高越红
-    if "1-8 T0CPS" in df.columns:
-        cps_col = df["1-8 T0CPS"].copy()
-        # 排除总计行做归一化
-        non_total = cps_col.drop(index=total_row_idx, errors="ignore")
-        if len(non_total) > 0 and non_total.max() > non_total.min():
-            def cps_color(val):
-                if pd.isna(val):
-                    return ""
-                # 排除总计行不上色
-                row_mask = df["1-8 T0CPS"] == val
-                if any(df.loc[row_mask, "渠道名称"] == "总计"):
-                    return ""
-                mn, mx = non_total.min(), non_total.max()
-                norm = (val - mn) / (mx - mn) if mx > mn else 0
-                # 绿 -> 黄 -> 红
-                r = int(norm * 220)
-                g = int((1 - norm) * 180 + 40)
-                return f"background-color: rgb({r},{g},60); color: white;"
-            styled = styled.map(cps_color, subset=["1-8 T0CPS"])
-
-    # 花费结构列：占比>30%标橙色提醒
-    if "花费结构" in df.columns:
-        def expense_share_color(val):
-            if pd.isna(val) or val == "":
-                return ""
-            try:
-                v = float(val)
-                if v > 30:
-                    return "background-color: #FFF3CD; color: #856404; font-weight: bold;"
-            except (ValueError, TypeError):
-                pass
-            return ""
-        styled = styled.map(expense_share_color, subset=["花费结构"])
-
-    return styled
 
 
 # ─────────────────────────────────────────────
@@ -181,15 +125,7 @@ def render_tab_channel_result():
             lambda v: f"{v:.1f}%" if pd.notna(v) else ""
         )
 
-    # 条件格式：总计行加粗灰底 + 花费结构>30%橙色
-    total_row_idx = df_display[df_display["渠道名称"] == "总计"].index.tolist()
-
-    def highlight_total(row):
-        if row.name in total_row_idx:
-            return ["background-color:#f0f0f0; font-weight:bold"] * len(row)
-        return [""] * len(row)
-
-    def highlight_expense_share(val):
+    def _highlight_expense_share(val):
         try:
             v = float(str(val).replace("%", ""))
             if v > 30:
@@ -198,9 +134,11 @@ def render_tab_channel_result():
             pass
         return ""
 
-    styled = df_display.style.apply(highlight_total, axis=1)
+    styled = df_display.style.apply(
+        lambda row: highlight_total_row(row, key_col="渠道名称"), axis=1
+    )
     if "花费结构" in df_display.columns:
-        styled = styled.map(highlight_expense_share, subset=["花费结构"])
+        styled = styled.map(_highlight_expense_share, subset=["花费结构"])
 
     st.dataframe(
         styled,
@@ -226,7 +164,6 @@ def render_tab_channel_result():
     st.subheader("📊 渠道可视化分析")
 
     CHART_H = 280
-    COLORS = ["#4C6EF5", "#7C3AED", "#22C55E", "#F97316", "#E64980", "#06B6D4", "#8B5CF6"]
     ch_names = [ch.channel_name for ch in channels]
     ch_expenses = [ch.expense for ch in channels]
     ch_tx = [ch.t0_transaction * 10 for ch in channels]
@@ -239,7 +176,7 @@ def render_tab_channel_result():
             values=ch_expenses,
             title="各渠道花费占比",
             hole=0.4,
-            color_discrete_sequence=COLORS,
+            color_discrete_sequence=CHART_COLORS,
         )
         fig_pie.update_traces(
             textposition="inside",

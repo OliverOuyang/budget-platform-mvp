@@ -335,16 +335,22 @@ def render_tab_fit(model, df, dv_col: str, ch_names: dict, data_mode: str, time_
         })
     if hasattr(model, 'impressions_params'):
         for ch, cp in model.impressions_params.items():
+            _theta = getattr(cp, 'theta', getattr(cp, 'theta_mean', 0))
+            _alpha = getattr(cp, 'alpha', getattr(cp, 'alpha_mean', 0))
+            _gamma = getattr(cp, 'gamma', getattr(cp, 'gamma_mean', 0))
+            _beta = getattr(cp, 'beta', getattr(cp, 'beta_mean', 0))
             if cp.adstock_type == "geometric":
-                adstock_str = f"θ={cp.theta:.3f}"
+                adstock_str = f"θ={_theta:.3f}"
             else:
-                adstock_str = f"shape={cp.weibull_shape:.2f}, scale={cp.weibull_scale:.2f}"
+                _ws = getattr(cp, 'weibull_shape', 0)
+                _wsc = getattr(cp, 'weibull_scale', 0)
+                adstock_str = f"shape={_ws:.2f}, scale={_wsc:.2f}"
             param_rows.append({
                 "渠道": ch_names.get(ch, ch) + "(曝光)",
                 "类型": "曝光",
                 "Adstock": adstock_str,
-                "Hill α": round(cp.alpha, 3),
-                "Hill γ": round(cp.gamma, 3),
+                "Hill α": round(_alpha, 3),
+                "Hill γ": round(_gamma, 3),
                 "系数 β": round(_beta, 6),
                 "贡献 %": "—",
                 "ROI": "—",

@@ -1,11 +1,14 @@
-"""V4.3c What-if 快速模拟 Tab — 一键调整参数查看结果变化。"""
+"""V4.3c What-if 快速模拟 Tab — 一键调整参数，用真实计算管线查看结果变化。"""
 from __future__ import annotations
 
 import streamlit as st
 import pandas as pd
-import numpy as np
-from app.config import CHANNEL_NAMES, DEFAULT_TOTAL_BUDGET
 from app.styles import render_callout
+from pages._shared_params import (
+    get_current_pipeline_params,
+    build_adoption_params,
+    run_pipeline_with_params,
+)
 
 
 # ==================== 预设模拟方案 ====================
@@ -18,153 +21,118 @@ WHATIF_PRESETS = {
 }
 
 
-def _simulate_whatif(preset_name: str, preset_config: dict) -> pd.DataFrame:
-    """运行 what-if 模拟，返回对比 DataFrame。"""
-    table1 = st.session_state.get("table1_result")
-    table2 = st.session_state.get("table2_result")
-    params = st.session_state.get("parameters")
+def _apply_preset(params: dict, preset_config: dict) -> dict:
+    """将 what-if 预设应用到参数副本上，返回新参数字典。"""
+    p = {k: (dict(v) if isinstance(v, dict) else v) for k, v in params.items()}
+    ptype = preset_config["type"]
 
-    if table1 is None or table2 is None or params is None:
-        return _mock_simulation(preset_name, preset_config)
-
-    # 当前值
-    current_budget = getattr(params, "total_budget", DEFAULT_TOTAL_BUDGET)
-    current_cps = getattr(table2, "total_cps", 0.353)
-    current_t0 = getattr(table1, "total_t0_transaction", 0.85)
-    total_transaction = getattr(table2, "total_transaction", 2.35)
-
-    sim_budget = current_budget
-    sim_cps = current_cps
-    sim_t0 = current_t0
-    sim_total = total_transaction
-
-    preset_type = preset_config["type"]
-
-    if preset_type == "budget_delta":
-        delta = preset_config["delta"]
-        sim_budget = current_budget + delta
-        scale = sim_budget / current_budget if current_budget > 0 else 1
-        sim_t0 = current_t0 * scale
-        sim_total = total_transaction * scale
-        # CPS stays roughly same with budget scale
-    elif preset_type == "cps_scale":
+    if ptype == "budget_delta":
+        p["total_budget"] = max(p["total_budget"] + preset_config["delta"], 0)
+    elif ptype == "cps_scale":
         factor = preset_config["factor"]
-        sim_cps = current_cps * factor
-        # Lower CPS → more T0 per unit spend
-        cps_effect = current_cps / sim_cps if sim_cps > 0 else 1
-        sim_t0 = current_t0 * cps_effect
-        sim_total = total_transaction + (sim_t0 - current_t0) * 1.49  # M0/T0 ratio effect
-    elif preset_type == "channel_cut":
+        p["channel_1_8_cps"] = {k: v * factor for k, v in p["channel_1_8_cps"].items()}
+    elif ptype == "channel_cut":
+        ch = preset_config["channel"]
         factor = preset_config["factor"]
-        # Rough: channel is ~16% of budget, cut reduces total proportionally
-        sim_t0 = current_t0 * (1 - 0.16 * (1 - factor))
-        sim_total = total_transaction * (1 - 0.16 * (1 - factor))
-        sim_budget = current_budget * (1 - 0.16 * (1 - factor))
-    elif preset_type == "approval_delta":
+        shares = dict(p["channel_budget_shares"])
+        if ch in shares:
+            freed = shares[ch] * (1 - factor)
+            shares[ch] *= factor
+            # 释放的预算按比例分配给其他渠道
+            other_total = sum(v for k, v in shares.items() if k != ch)
+            if other_total > 0:
+                for k in shares:
+                    if k != ch:
+                        shares[k] += freed * (shares[k] / other_total)
+        p["channel_budget_shares"] = shares
+    elif ptype == "approval_delta":
         delta = preset_config["delta"]
-        # Approval doesn't directly affect T0, but affects authorization volume
-        sim_t0 = current_t0  # unchanged
-        sim_total = total_transaction  # unchanged
+        p["channel_1_3_rate"] = {
+            k: min(v + delta, 1.0) for k, v in p["channel_1_3_rate"].items()
+        }
 
-    def _fmt_change(current, simulated, is_pct=False):
-        diff = simulated - current
+    return p
+
+
+def _build_comparison_df(t1_base, t2_base, t1_sim, t2_sim) -> pd.DataFrame:
+    """构建基线 vs 模拟对比表。"""
+
+    def _fmt(cur, sim, is_pct=False):
+        diff = sim - cur
         if abs(diff) < 1e-6:
             return "不变"
         if is_pct:
-            return f"{diff:+.1f}pp"
-        pct = (diff / current * 100) if current != 0 else 0
-        return f"{pct:+.1f}%"
+            return f"{diff * 100:+.1f}pp"
+        return f"{(diff / cur * 100):+.1f}%" if cur != 0 else f"{diff:+.2f}"
 
-    rows = [
+    return pd.DataFrame([
         {
             "指标": "总花费(万)",
-            "当前值": f"{current_budget:,.0f}",
-            "模拟值": f"{sim_budget:,.0f}",
-            "变化": _fmt_change(current_budget, sim_budget),
+            "当前值": f"{t1_base.total_expense:,.0f}",
+            "模拟值": f"{t1_sim.total_expense:,.0f}",
+            "变化": _fmt(t1_base.total_expense, t1_sim.total_expense),
         },
         {
             "指标": "全业务CPS",
-            "当前值": f"{current_cps*100:.1f}%",
-            "模拟值": f"{sim_cps*100:.1f}%",
-            "变化": _fmt_change(current_cps*100, sim_cps*100, is_pct=True),
+            "当前值": f"{t2_base.total_cps * 100:.1f}%",
+            "模拟值": f"{t2_sim.total_cps * 100:.1f}%",
+            "变化": _fmt(t2_base.total_cps, t2_sim.total_cps, is_pct=True),
         },
         {
             "指标": "T0交易额(亿)",
-            "当前值": f"{current_t0:.2f}",
-            "模拟值": f"{sim_t0:.2f}",
-            "变化": _fmt_change(current_t0, sim_t0),
+            "当前值": f"{t1_base.total_t0_transaction:.2f}",
+            "模拟值": f"{t1_sim.total_t0_transaction:.2f}",
+            "变化": _fmt(t1_base.total_t0_transaction, t1_sim.total_t0_transaction),
         },
         {
             "指标": "首借交易额(亿)",
-            "当前值": f"{total_transaction:.2f}",
-            "模拟值": f"{sim_total:.2f}",
-            "变化": _fmt_change(total_transaction, sim_total),
+            "当前值": f"{t2_base.total_transaction:.2f}",
+            "模拟值": f"{t2_sim.total_transaction:.2f}",
+            "变化": _fmt(t2_base.total_transaction, t2_sim.total_transaction),
         },
-    ]
-    return pd.DataFrame(rows)
-
-
-def _mock_simulation(preset_name: str, preset_config: dict) -> pd.DataFrame:
-    """无计算结果时用 mock 数据。"""
-    base = {"总花费(万)": 3000, "全业务CPS": 35.3, "T0交易额(亿)": 0.85, "首借交易额(亿)": 2.35}
-
-    if preset_config["type"] == "cps_scale":
-        sim = {"总花费(万)": 3000, "全业务CPS": 31.8, "T0交易额(亿)": 0.94, "首借交易额(亿)": 2.52}
-    elif preset_config["type"] == "budget_delta" and preset_config["delta"] > 0:
-        sim = {"总花费(万)": 3500, "全业务CPS": 35.3, "T0交易额(亿)": 0.99, "首借交易额(亿)": 2.74}
-    elif preset_config["type"] == "budget_delta" and preset_config["delta"] < 0:
-        sim = {"总花费(万)": 2500, "全业务CPS": 35.3, "T0交易额(亿)": 0.71, "首借交易额(亿)": 1.96}
-    elif preset_config["type"] == "channel_cut":
-        sim = {"总花费(万)": 2760, "全业务CPS": 34.1, "T0交易额(亿)": 0.78, "首借交易额(亿)": 2.16}
-    else:
-        sim = {"总花费(万)": 3000, "全业务CPS": 35.3, "T0交易额(亿)": 0.85, "首借交易额(亿)": 2.35}
-
-    rows = []
-    for key in base:
-        b, s = base[key], sim[key]
-        if abs(b - s) < 0.01:
-            change = "不变"
-        elif "CPS" in key:
-            change = f"{s - b:+.1f}pp"
-        else:
-            change = f"{(s - b) / b * 100:+.1f}%"
-
-        if "CPS" in key:
-            rows.append({"指标": key, "当前值": f"{b:.1f}%", "模拟值": f"{s:.1f}%", "变化": change})
-        elif "亿" in key:
-            rows.append({"指标": key, "当前值": f"{b:.2f}", "模拟值": f"{s:.2f}", "变化": change})
-        else:
-            rows.append({"指标": key, "当前值": f"{b:,.0f}", "模拟值": f"{s:,.0f}", "变化": change})
-
-    return pd.DataFrame(rows)
+    ])
 
 
 def render_tab_whatif():
     """渲染 What-if 快速模拟 Tab。"""
     st.markdown("**What-if 快速模拟**")
-    render_callout("一键调整参数，查看结果变化。选择下方按钮快速模拟不同场景。", kind="info")
+    render_callout(
+        "一键调整参数，查看结果变化。选择下方按钮快速模拟不同场景。", kind="info"
+    )
+
+    current = get_current_pipeline_params()
+    t1_base = st.session_state.get("table1_result")
+    t2_base = st.session_state.get("table2_result")
+    if current is None or t1_base is None or t2_base is None:
+        st.info("请先完成参数配置并执行计算，What-if 模拟将在此处可用。")
+        return
 
     # 预设按钮
     if "whatif_selected" not in st.session_state:
         st.session_state.whatif_selected = "CPS全降10%"
 
     btn_cols = st.columns(len(WHATIF_PRESETS))
-    for i, (name, config) in enumerate(WHATIF_PRESETS.items()):
+    for i, name in enumerate(WHATIF_PRESETS):
         with btn_cols[i]:
             is_selected = st.session_state.whatif_selected == name
-            btn_type = "primary" if is_selected else "secondary"
-            if st.button(name, key=f"whatif_{name}", type=btn_type, use_container_width=True):
+            if st.button(
+                name,
+                key=f"whatif_{name}",
+                type="primary" if is_selected else "secondary",
+                use_container_width=True,
+            ):
                 st.session_state.whatif_selected = name
                 st.rerun()
 
-    # 模拟结果
+    # 执行模拟（真实管线计算）
     selected = st.session_state.whatif_selected
-    config = WHATIF_PRESETS[selected]
-    result_df = _simulate_whatif(selected, config)
+    sim_params = _apply_preset(current, WHATIF_PRESETS[selected])
 
-    st.markdown("")
+    with st.spinner("模拟计算中..."):
+        _, _, t1_sim, t2_sim = run_pipeline_with_params(sim_params)
+
     st.dataframe(
-        result_df,
+        _build_comparison_df(t1_base, t2_base, t1_sim, t2_sim),
         use_container_width=True,
         hide_index=True,
         column_config={
@@ -177,7 +145,10 @@ def render_tab_whatif():
     col_adopt, col_reset = st.columns(2)
     with col_adopt:
         if st.button("✅ 采纳此模拟", type="primary", use_container_width=True):
-            st.info("功能开发中：采纳后将自动回填参数并重新计算。")
+            st.session_state["pending_result_template_params"] = build_adoption_params(
+                sim_params, current
+            )
+            st.rerun()
     with col_reset:
         if st.button("🔄 重置", use_container_width=True):
             st.session_state.whatif_selected = "CPS全降10%"
