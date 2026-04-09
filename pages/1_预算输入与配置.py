@@ -20,7 +20,7 @@ from app.ui_utils import (
     reset_v01_flow_for_new_upload,
     update_v01_flow,
 )
-from core.data_loader import load_excel, validate_excel_structure
+from core.data_loader import load_excel, validate_excel_structure, load_guardrail_data
 
 
 def _render_upload_diagnostics(df_raw1: pd.DataFrame, df_raw2: pd.DataFrame, file_name: str) -> Dict[str, int]:
@@ -235,6 +235,88 @@ with hero_right:
 _handle_upload(uploaded_file)
 
 data = st.session_state.get("uploaded_data")
+
+# --- V4.3c: 护栏指标自动检测（替代手动上传）---
+if data is not None:
+    with st.container(border=True):
+        col_title, col_status = st.columns([4, 1])
+        with col_title:
+            st.markdown("### 🛡️ 护栏指标 — 自动检测结果")
+            st.caption("系统自动扫描已上传 Excel，检查 `GUARDRAIL_METRICS` 定义的指标列是否存在。")
+
+        # 检测所有表中的护栏指标
+        df1 = data["df_raw1"]
+        df2 = data["df_raw2"]
+        combined_cols = set(df1.columns) | set(df2.columns)
+
+        from core.data_loader import GUARDRAIL_METRICS
+        all_metrics = list(GUARDRAIL_METRICS.keys())
+        detected = [m for m in all_metrics if m in combined_cols]
+        missing = [m for m in all_metrics if m not in combined_cols]
+
+        # 保存到 session_state 供页面 2 的护栏 Tab 使用
+        st.session_state["detected_guardrail_metrics"] = detected
+        st.session_state["missing_guardrail_metrics"] = missing
+
+        # 自动从 df1 加载护栏数据（如果有检测到的指标）
+        if detected and st.session_state.get("guardrail_data") is None:
+            try:
+                id_cols = [c for c in ["月份", "渠道类别"] if c in df1.columns]
+                if id_cols:
+                    guardrail_cols = id_cols + [m for m in detected if m in df1.columns]
+                    if len(guardrail_cols) > len(id_cols):
+                        st.session_state["guardrail_data"] = df1[guardrail_cols].copy()
+            except Exception:
+                pass
+
+        with col_status:
+            total = len(all_metrics)
+            st.markdown(
+                f'<div style="text-align:right"><span class="status-badge status-ok" '
+                f'style="font-size:12px">{len(detected)}/{total} 可用</span></div>',
+                unsafe_allow_html=True,
+            )
+
+        # 指标网格（每行 4 个）
+        grid_cols = st.columns(4)
+        for i, metric in enumerate(all_metrics):
+            with grid_cols[i % 4]:
+                is_detected = metric in detected
+                cls = "detected" if is_detected else "missing"
+                icon = "✓ 已检测" if is_detected else "— 缺失"
+                color = "#2E7D32" if is_detected else "#F57C00"
+                st.markdown(
+                    f'<div class="guardrail-item {cls}" style="margin-bottom:8px">'
+                    f'<div style="font-size:11px;color:#666;margin-bottom:2px">{metric}</div>'
+                    f'<div style="font-size:12px;font-weight:700;color:{color}">{icon}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+        if missing:
+            st.info(
+                "缺失的指标不影响主计算，在护栏监控中标为「无数据」。"
+                "如需补充，在 Excel 中新增对应列名后重新上传即可。"
+            )
+
+# --- Optional: guardrail indicator upload (保留备用) ---
+with st.expander("📋 护栏指标数据 (可选 · 手动上传)", expanded=False):
+    st.caption("如果主业务数据不包含护栏指标列，可在此额外上传护栏指标文件（按渠道×月份粒度）。")
+    guardrail_file = st.file_uploader("上传护栏指标文件 (*.csv / *.xlsx)", type=["csv", "xlsx"], key="guardrail_uploader")
+    if guardrail_file is not None:
+        try:
+            if guardrail_file.name.endswith(".csv"):
+                gdf = pd.read_csv(guardrail_file)
+            else:
+                gdf = pd.read_excel(guardrail_file, sheet_name=0)
+            guardrail_data = load_guardrail_data(gdf)
+            st.session_state["guardrail_data"] = guardrail_data
+            st.success(f"✅ 护栏指标数据加载成功: {len(guardrail_data)} 行")
+        except ValueError as e:
+            st.error(f"❌ 护栏指标加载失败: {e}")
+    elif st.session_state.get("guardrail_data") is not None:
+        st.info(f"已加载护栏指标数据: {len(st.session_state['guardrail_data'])} 行")
+
 if data is None:
     render_guidance_card(
         "尚未上传数据",

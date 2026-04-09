@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pytest
 import pandas as pd
 
-from core.data_loader import validate_excel_structure
+from core.data_loader import validate_excel_structure, load_guardrail_data, GUARDRAIL_REQUIRED_COLUMNS
 
 
 @pytest.fixture
@@ -59,3 +59,45 @@ def test_validate_excel_structure_empty_df1(valid_df2):
     """Empty df1 raises ValueError (missing columns fires before empty check)."""
     with pytest.raises(ValueError):
         validate_excel_structure(pd.DataFrame(), valid_df2)
+
+
+# ---------------------------------------------------------------------------
+# Guardrail data loading tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def valid_guardrail_df():
+    return pd.DataFrame({
+        "月份": ["2025-01", "2025-01"],
+        "渠道类别": ["腾讯", "抖音"],
+        "FPD30": [0.035, 0.042],
+        "首借终损率": [0.08, 0.09],
+        "复借终损率": [0.05, 0.06],
+        "复借交易额": [12000, 8000],
+        "渠道LTV": [850, 720],
+    })
+
+
+def test_load_guardrail_valid_df(valid_guardrail_df):
+    result = load_guardrail_data(valid_guardrail_df)
+    assert len(result) == 2
+    assert list(result.columns) == GUARDRAIL_REQUIRED_COLUMNS
+
+
+def test_load_guardrail_none_returns_empty():
+    result = load_guardrail_data(None)
+    assert len(result) == 0
+    assert list(result.columns) == GUARDRAIL_REQUIRED_COLUMNS
+
+
+def test_load_guardrail_missing_column():
+    df_bad = pd.DataFrame({"月份": ["2025-01"], "渠道类别": ["腾讯"]})
+    with pytest.raises(ValueError, match="护栏指标数据缺少必需列"):
+        load_guardrail_data(df_bad)
+
+
+def test_load_guardrail_backslash_n_converted(valid_guardrail_df):
+    df = valid_guardrail_df.copy()
+    df.loc[0, "FPD30"] = "\\N"
+    result = load_guardrail_data(df)
+    assert pd.isna(result.loc[0, "FPD30"])

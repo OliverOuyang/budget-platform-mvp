@@ -34,3 +34,18 @@ data/*.parquet
 
 # Logs
 *.log
+
+# AI/Tool config directories
+.agents/
+.claude/
+.omc/
+.trae/
+
+# Temporary/binary files
+*.stackdump
+*.pkl
+data/models/
+skills-lock.json
+
+# Generated HTML mockups
+mockup_*.html
