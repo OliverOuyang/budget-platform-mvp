@@ -2,22 +2,26 @@ from __future__ import annotations
 
 import streamlit as st
 import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
 from app.flow_components import (
-    render_bullet_summary,
     render_flow_header,
     render_guidance_card,
-    render_next_step_card,
     render_section_header,
-    render_status_card,
     render_step_progress,
 )
-from pages._tab_overview import render_tab_overview
 from pages._tab_channel_result import render_tab_channel_result
 from pages._tab_customer_result import render_tab_customer_result
 from pages._tab_coefficient_trace import render_tab_coefficient_trace
 from pages._tab_scenario_manager import render_tab_scenario_manager
+from pages._tab_model_comparison import render_tab_model_comparison
+from pages._tab_goal_scenarios import render_tab_goal_scenarios, render_inline_goal_selector
+from pages._tab_guardrail import render_tab_guardrail
+from pages._tab_whatif import render_tab_whatif
+from app.styles import inject_custom_css, render_impact_chain, render_callout
 from app.config import CHANNEL_NAMES, DEFAULT_DAYS_ELAPSED, DEFAULT_MONTH_DAYS, DEFAULT_TOTAL_BUDGET
 from app.ui_utils import (
+    apply_template_to_result_widgets,
     build_channel_parameter_rows,
     ensure_flow_state,
     get_v01_flow,
@@ -225,6 +229,107 @@ def _build_baseline_panel_data(
         )
 
     return pd.DataFrame(rows), pd.DataFrame(channel_rows)
+
+
+def _build_historical_channel_detail(df_raw1: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
+    """Build per-month channel core metrics tables for historical reference."""
+    df_n = normalize_channel_history(df_raw1)
+    if df_n.empty or "月份标签" not in df_n.columns:
+        return []
+
+    df_n["花费"] = pd.to_numeric(df_n.get("花费", 0), errors="coerce").fillna(0)
+    df_n["1-8t0首借24h借款金额"] = pd.to_numeric(
+        df_n.get("1-8t0首借24h借款金额", 0), errors="coerce"
+    ).fillna(0)
+    df_n["1-8t0过件率"] = pd.to_numeric(df_n.get("1-8t0过件率", 0), errors="coerce").fillna(0)
+    df_n["t0申完成本"] = pd.to_numeric(df_n.get("t0申完成本", 0), errors="coerce").fillna(0)
+    if "非年龄拒绝t0申完量" in df_n.columns:
+        df_n["申完量"] = pd.to_numeric(df_n["非年龄拒绝t0申完量"], errors="coerce").fillna(0)
+    else:
+        cost = df_n["t0申完成本"].replace(0, pd.NA)
+        df_n["申完量"] = (df_n["花费"] / cost).fillna(0)
+
+    months = sorted(m for m in df_n["月份标签"].dropna().unique() if m != "-")
+    if len(months) < 2:
+        return []
+
+    # Include up to 3 prior months + latest (possibly partial)
+    history_months = months[-4:]
+
+    result: list[tuple[str, pd.DataFrame]] = []
+    for month in history_months:
+        month_df = df_n[df_n["月份标签"] == month].copy()
+        if month_df.empty:
+            continue
+
+        total_expense = month_df["花费"].sum()
+        rows = []
+        for _, row in month_df.iterrows():
+            channel = row.get("渠道类别", row.get("渠道名称", ""))
+            expense = float(row["花费"])
+            rows.append({
+                "渠道": channel,
+                "花费": expense / 10000,
+                "1-8组T0交易额": float(row["1-8t0首借24h借款金额"]) / 1e8,
+                "1-8T0过件率": float(row["1-8t0过件率"]),
+                "T0申完成本": float(row["t0申完成本"]),
+                "T0申完量": float(row["申完量"]),
+                "花费结构": (expense / total_expense * 100) if total_expense > 0 else 0.0,
+            })
+
+        total_t0 = month_df["1-8t0首借24h借款金额"].sum()
+        total_completion = month_df["申完量"].sum()
+        weighted_approval = (
+            (month_df["1-8t0过件率"] * month_df["申完量"]).sum() / total_completion
+            if total_completion > 0 else 0.0
+        )
+        avg_cost = total_expense / total_completion if total_completion > 0 else 0.0
+        rows.insert(0, {
+            "渠道": "总计",
+            "花费": total_expense / 10000,
+            "1-8组T0交易额": total_t0 / 1e8,
+            "1-8T0过件率": weighted_approval,
+            "T0申完成本": avg_cost,
+            "T0申完量": total_completion,
+            "花费结构": 100.0,
+        })
+
+        month_num = pd.to_datetime(month + "-01").month
+        label = f"{month_num}月首登T0指标"
+        if month == months[-1]:
+            label += "（截至当前）"
+        result.append((label, pd.DataFrame(rows)))
+
+    return result
+
+
+def _style_historical_channel_detail(df: pd.DataFrame):
+    """Style per-month channel detail table with color-coded columns."""
+    if df.empty:
+        return df
+
+    def highlight_total(row):
+        if row.get("渠道") == "总计":
+            return ["background-color: #eef2ff; font-weight: 700;" for _ in row]
+        return ["" for _ in row]
+
+    return (
+        df.style
+        .format({
+            "花费": "{:,.1f}万",
+            "1-8组T0交易额": "{:.2f}亿",
+            "1-8T0过件率": "{:.1%}",
+            "T0申完成本": "{:,.0f}",
+            "T0申完量": "{:,.0f}",
+            "花费结构": "{:.1f}%",
+        })
+        .set_properties(subset=["渠道"], **{"font-weight": "600"})
+        .set_properties(subset=["花费", "花费结构"], **{"background-color": "#eff6ff"})
+        .set_properties(subset=["1-8组T0交易额", "T0申完量"], **{"background-color": "#faf5ff"})
+        .set_properties(subset=["1-8T0过件率"], **{"background-color": "#f0fdf4"})
+        .set_properties(subset=["T0申完成本"], **{"background-color": "#fff7ed"})
+        .apply(highlight_total, axis=1)
+    )
 
 
 def _render_historical_baseline_panel(
@@ -530,14 +635,7 @@ def _style_latest_reference_table(df: pd.DataFrame):
 
 def _apply_template_to_result_widgets(params: dict) -> None:
     """Sync loaded template values into result-page widget state."""
-    st.session_state.current_template_params = params
-    st.session_state["result_total_budget"] = float(params.get("total_budget", DEFAULT_TOTAL_BUDGET))
-    st.session_state["result_m0_calc_period"] = int(params.get("existing_m0_calculation_months", 3))
-    st.session_state["result_non_initial_credit"] = float(params.get("non_initial_credit_transaction", 0.0))
-    st.session_state["result_rta_promotion_fee"] = float(params.get("rta_promotion_fee", 0.0))
-    st.session_state["result_month_total_days"] = int(params.get("month_total_days", DEFAULT_MONTH_DAYS))
-    st.session_state["result_days_elapsed"] = int(params.get("days_elapsed", DEFAULT_DAYS_ELAPSED))
-    st.session_state.pop("result_channel_editor", None)
+    apply_template_to_result_widgets(params)
 
 
 def _consume_pending_template_params() -> None:
@@ -676,15 +774,12 @@ def _render_parameter_panel() -> bool:
     latest_share_rows = _build_latest_share_rows(last_month)
 
     st.subheader("🛠️ 参数配置与计算")
-    render_guidance_card(
-        "在本页完成参数配置",
-        "参考最新月历史过件率、CPS、申完成本和花费结构设置参数，点击计算后结果会在当前页下方刷新。",
-    )
-    with st.container(border=True):
-        render_section_header("历史达成与当月预估", "先设定已完成天数和当月总天数，再看历史完整月份、当月至今达成和当月整月预估。")
-        st.caption("“预估”列使用当前月累计数据按已完成天数外推；历史月份按两张 raw 的可交集月份展示。RTA费用在历史 raw 中缺字段时留空，仅在预估列展示当前输入值。")
-        day_cols = st.columns(2)
-        with day_cols[0]:
+
+    # --- 历史达成 + 预估参数（默认折叠）---
+    with st.expander("📊 历史达成与当月预估", expanded=False):
+        st.caption("「预估」列使用当前月累计数据按已完成天数外推；历史月份按两张 raw 的可交集月份展示。")
+        param_cols = st.columns(3)
+        with param_cols[0]:
             month_total_days = st.number_input(
                 "当月总天数",
                 28,
@@ -692,7 +787,7 @@ def _render_parameter_panel() -> bool:
                 int(st.session_state.get("result_month_total_days", template_params.get("month_total_days", DEFAULT_MONTH_DAYS))),
                 key="result_month_total_days",
             )
-        with day_cols[1]:
+        with param_cols[1]:
             days_elapsed = st.number_input(
                 "已完成天数",
                 1,
@@ -700,12 +795,37 @@ def _render_parameter_panel() -> bool:
                 int(st.session_state.get("result_days_elapsed", template_params.get("days_elapsed", DEFAULT_DAYS_ELAPSED))),
                 key="result_days_elapsed",
             )
+        with param_cols[2]:
+            m0_calc_period = st.radio(
+                "存量首登M0计算周期",
+                [3, 6],
+                index=0 if int(st.session_state.get("result_m0_calc_period", template_params.get("existing_m0_calculation_months", 3))) == 3 else 1,
+                horizontal=True,
+                key="result_m0_calc_period",
+            )
+        extra_cols = st.columns(2)
+        with extra_cols[0]:
+            non_initial_credit = st.number_input(
+                "非初审授信户首借交易额 (亿元)",
+                0.0,
+                value=float(st.session_state.get("result_non_initial_credit", template_params.get("non_initial_credit_transaction", 0.0))),
+                format="%.2f",
+                key="result_non_initial_credit",
+            )
+        with extra_cols[1]:
+            rta_promotion_fee = st.number_input(
+                "RTA费用+促申完 (万元)",
+                0.0,
+                value=float(st.session_state.get("result_rta_promotion_fee", template_params.get("rta_promotion_fee", 0.0))),
+                format="%.2f",
+                key="result_rta_promotion_fee",
+            )
         historical_table = _build_historical_result_table(
             data["df_raw1"],
             data["df_raw2"],
             month_total_days=int(month_total_days),
             days_elapsed=int(days_elapsed),
-            rta_estimate=float(st.session_state.get("result_rta_promotion_fee", template_params.get("rta_promotion_fee", 0.0))),
+            rta_estimate=rta_promotion_fee,
         )
         if not historical_table.empty:
             historical_height = min(760, 52 + (len(historical_table) + 1) * 42)
@@ -717,6 +837,23 @@ def _render_parameter_panel() -> bool:
             )
         else:
             st.info("历史月份不足，暂时无法生成达成与预估表。")
+
+        # 各月渠道核心指标明细
+        channel_details = _build_historical_channel_detail(data["df_raw1"])
+        if channel_details:
+            st.markdown("---")
+            st.caption("📋 各月渠道核心指标明细（蓝色=预算，绿色=质量，橙色=成本，紫色=产出）")
+            detail_tabs = st.tabs([label for label, _ in channel_details])
+            for tab, (_, detail_df) in zip(detail_tabs, channel_details):
+                with tab:
+                    detail_height = min(300, 52 + (len(detail_df) + 1) * 38)
+                    st.dataframe(
+                        _style_historical_channel_detail(detail_df),
+                        use_container_width=True,
+                        hide_index=True,
+                        height=detail_height,
+                    )
+
     hist_total_budget = sum(_safe_num(item.get("花费")) for item in last_month.values()) / 10000 if last_month else 0
     baseline_approval = (
         sum(_safe_num(item.get("1-3t0过件率")) for item in last_month.values()) / len(last_month) if last_month else 0.0
@@ -727,22 +864,9 @@ def _render_parameter_panel() -> bool:
     baseline_cost = (
         sum(_safe_num(item.get("t0申完成本")) for item in last_month.values()) / len(last_month) if last_month else 0.0
     )
-    with st.container(border=True):
-        render_section_header("推荐操作顺序", "按这个顺序往下走，改完参数后只需要继续往下看“当前目标拆解表”和“计算确认”即可。")
-        st.markdown(
-            """
-1. 先看上面的“历史达成与当月预估”，判断最近趋势和当前月外推是否合理。
-2. 如果有历史模板，先在“模板管理”里直接加载，再继续下面的预算输入。
-3. 先改“核心预算输入”，确定总预算规模和 M0 计算周期。
-4. 再看“最新月参考摘要”，确认渠道历史过件率、CPS、申完成本和花费结构基线。
-5. 接着修改“渠道参数矩阵”，这里改动后会直接影响下面的“当前目标拆解表”。
-6. 再补“补充业务参数”，确认无误后点击“计算预算”。
-7. 计算完成后，继续往下看结果总览、方案判断和 tabs，不需要再回到上面重新找入口。
-            """
-        )
 
-    with st.container(border=True):
-        render_section_header("步骤 1 · 模板管理（可选）", "如果你已有类似方案，先在这里加载；没有就跳过，继续手动配置。")
+    # --- 模板管理（默认折叠）---
+    with st.expander("💾 模板管理（可选）", expanded=False):
         _render_template_management(
             float(st.session_state.get("result_total_budget", template_params.get("total_budget", DEFAULT_TOTAL_BUDGET))),
             template_params.get("channel_budget_shares", {}),
@@ -757,111 +881,160 @@ def _render_parameter_panel() -> bool:
             int(st.session_state.get("result_m0_calc_period", template_params.get("existing_m0_calculation_months", 3))),
         )
 
+    # --- 核心预算输入 ---
     with st.container(border=True):
-        render_section_header("步骤 2 · 核心预算输入", "先改总预算和计算周期。这会影响下方所有预览表和最终结果。")
-        total_budget = st.slider(
-            "总花费 (万元)",
-            500,
-            10000,
-            int(st.session_state.get("result_total_budget", template_params.get("total_budget", DEFAULT_TOTAL_BUDGET))),
-            50,
-            key="result_total_budget",
-        )
-        top_cols = st.columns(2)
-        with top_cols[0]:
-            m0_calc_period = st.radio(
-                "存量首登M0计算周期",
-                [3, 6],
-                index=0 if int(st.session_state.get("result_m0_calc_period", template_params.get("existing_m0_calculation_months", 3))) == 3 else 1,
-                horizontal=True,
-                key="result_m0_calc_period",
+        render_section_header("💰 核心预算输入", "确定总预算规模。")
+        budget_cols = st.columns([3, 1])
+        with budget_cols[0]:
+            total_budget = st.slider(
+                "总花费 (万元)",
+                500,
+                10000,
+                int(st.session_state.get("result_total_budget", template_params.get("total_budget", DEFAULT_TOTAL_BUDGET))),
+                50,
+                key="result_total_budget",
             )
-        with top_cols[1]:
-            st.metric("相对最新月预算差异", f"{total_budget - hist_total_budget:+,.0f} 万元")
+        with budget_cols[1]:
+            st.metric("较最新月差异", f"{total_budget - hist_total_budget:+,.0f} 万元")
 
-    with st.container(border=True):
-        render_section_header("步骤 3 · 最新月参考摘要", "先看历史基线，再决定下面哪些渠道参数需要调整。")
-        metric_cols = st.columns(4)
-        metric_cols[0].metric("最新月预算基线", f"{hist_total_budget:,.0f} 万元")
-        metric_cols[1].metric("最新月1-3过件率", f"{baseline_approval:.2%}")
-        metric_cols[2].metric("最新月CPS", f"{baseline_cps:.2%}")
-        metric_cols[3].metric("最新月申完成本", f"{baseline_cost:,.0f} 元")
-        st.caption("如果你不确定参数怎么填，优先让下面的目标值贴近这里的最新月基线，再逐步微调。绿色看质量，橙色看成本，蓝色看申完成本，紫色看花费结构。")
-        if latest_share_rows:
-            latest_reference_df = pd.DataFrame(latest_share_rows)
-            latest_reference_height = min(340, 52 + (len(latest_reference_df) + 1) * 40)
-            st.dataframe(
-                _style_latest_reference_table(latest_reference_df),
-                use_container_width=True,
-                hide_index=True,
-                height=latest_reference_height,
+    # --- Step 3.5: MMM 智能推荐（可选）---
+    mmm_model = st.session_state.get("mmm_model")
+    mmm_recommendations = {}  # channel_name -> {spend, roi, saturation}
+
+    if mmm_model is not None:
+        with st.container(border=True):
+            st.markdown(
+                '<div style="border-left:4px solid #7B1FA2; padding-left:12px;">'
+                '<span style="font-size:15px;font-weight:600;">步骤 3.5 - MMM 智能推荐</span> '
+                '<span style="background:#7B1FA2;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:700;">MMM</span> '
+                '<span style="background:#1976D2;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:700;">可选</span>'
+                '</div>',
+                unsafe_allow_html=True,
             )
-        else:
-            st.info("暂无足够的最新月数据用于生成渠道参考。")
+            st.caption(f"基于已训练的 MMM 模型，在 {total_budget:,.0f} 万元总预算约束下，按等边际原则计算最优渠道分配。")
 
+            # Model status callout
+            trainer = st.session_state.get("mmm_trainer")
+            model_info = ""
+            if trainer and hasattr(trainer, "best_score"):
+                model_info = f"R²={getattr(trainer, 'best_score', 0):.2f}"
+            st.info(f"**模型状态：** 已加载 | {model_info} | 训练数据来自 MMM 模型洞察页")
+
+            # Get optimization results from MMM
+            recommended_spends = st.session_state.get("mmm_v01_recommended_spends", {})
+            if recommended_spends:
+                rec_rows = []
+                for ch_name in CHANNEL_NAMES:
+                    hist_expense = _safe_num(last_month.get(ch_name, {}).get("花费")) / 10000 if last_month.get(ch_name) else 0
+                    mmm_spend = recommended_spends.get(ch_name, hist_expense)
+                    change_pct = ((mmm_spend - hist_expense) / hist_expense * 100) if hist_expense > 0 else 0
+                    roi = st.session_state.get("mmm_v01_channel_roi", {}).get(ch_name, 0)
+                    sat = st.session_state.get("mmm_v01_channel_saturation", {}).get(ch_name, 0)
+
+                    if sat > 85:
+                        advice = "接近饱和，建议减投"
+                    elif sat < 50 and roi > 2:
+                        advice = "ROI高，加大投入"
+                    elif change_pct > 10:
+                        advice = "适度增投"
+                    elif change_pct < -10:
+                        advice = "建议控量"
+                    else:
+                        advice = "维持现状"
+
+                    mmm_recommendations[ch_name] = {"spend": mmm_spend, "roi": roi, "saturation": sat}
+                    rec_rows.append({
+                        "渠道": ch_name,
+                        "上月花费(万)": f"{hist_expense:,.0f}",
+                        "MMM推荐(万)": f"{mmm_spend:,.0f}",
+                        "变化": f"{change_pct:+.1f}%",
+                        "ROI": f"{roi:.1f}x" if roi > 0 else "-",
+                        "饱和度": f"{sat:.0f}%" if sat > 0 else "-",
+                        "操作建议": advice,
+                    })
+
+                st.dataframe(pd.DataFrame(rec_rows), use_container_width=True, hide_index=True)
+
+                # 一键采纳 button
+                adopt_cols = st.columns([1, 1])
+                with adopt_cols[0]:
+                    if st.button("🤖 一键采纳 → 填入下方参数矩阵", type="primary", use_container_width=True):
+                        for ch_name, rec in mmm_recommendations.items():
+                            # Update template params to use MMM recommended spends
+                            if total_budget > 0:
+                                template_params.setdefault("channel_budget_shares", {})[ch_name] = rec["spend"] / total_budget
+                        st.session_state.pop("result_channel_editor", None)
+                        st.rerun()
+                with adopt_cols[1]:
+                    st.button("跳过，手动配置", use_container_width=True)
+                st.caption("采纳后仍可在下方参数矩阵中微调。MMM 推荐基于等边际原则优化，不保证与所有业务约束一致。")
+            else:
+                st.warning("MMM 模型已训练但尚无预算优化结果。请前往 MMM 模型洞察页的「预算优化」Tab 运行优化。")
+
+    # --- 渠道参数矩阵（合并了最新月参考 + MMM参考 + 均值校验）---
     with st.container(border=True):
-        render_section_header("步骤 4 · 渠道参数矩阵", "这里是主编辑区。你改花费结构、过件率和 CPS，下面“当前目标拆解表”会立即跟着变化。")
-        st.caption("带色块前缀的 3 列是你要填的目标列：`🟪` 花费结构，`🟩` 质量，`🟧` 成本率；参考列不可编辑，申完成本直接沿用上月。")
-        editor_rows = build_channel_parameter_rows(last_month, template_params)
+        render_section_header("📋 渠道参数矩阵", "蓝色=可编辑，紫色=MMM参考，灰色=历史参考。")
+        editor_rows = build_channel_parameter_rows(last_month, template_params, total_budget=total_budget, mmm_recommendations=mmm_recommendations)
         editor_height = min(300, 52 + (len(editor_rows) + 1) * 38)
+
+        # Column config with color coding
+        col_config = {
+            "渠道": st.column_config.TextColumn("渠道", width="medium"),
+            "目标花费(万元)": st.column_config.NumberColumn("🔵目标花费(万元)", format="%.0f"),
+            "目标1-3过件率(%)": st.column_config.NumberColumn("🔵目标过件率(%)", format="%.2f"),
+            "目标CPS(%)": st.column_config.NumberColumn("🔵目标CPS(%)", format="%.2f"),
+            "MMM建议(万)": st.column_config.NumberColumn("🟣MMM建议(万)", format="%.0f"),
+            "MMM·ROI": st.column_config.NumberColumn("🟣ROI", format="%.1f"),
+            "MMM·饱和度(%)": st.column_config.NumberColumn("🟣饱和度(%)", format="%.0f"),
+            "参考·花费结构(%)": st.column_config.NumberColumn("参考·花费结构(%)", format="%.2f"),
+            "参考·CPS(%)": st.column_config.NumberColumn("参考·CPS(%)", format="%.2f"),
+            "T0申完成本(元)": st.column_config.NumberColumn("T0申完成本(元)", format="%.0f"),
+        }
+        disabled_cols = ["渠道", "MMM建议(万)", "MMM·ROI", "MMM·饱和度(%)", "参考·花费结构(%)", "参考·CPS(%)", "T0申完成本(元)"]
         editor_df = st.data_editor(
             editor_rows,
             use_container_width=True,
             height=editor_height,
             hide_index=True,
-            disabled=["渠道", "历史花费结构(%)", "历史1-3 T0过件率(%)", "历史1-8 T0CPS(%)", "历史T0申完成本(元)"],
-            column_config={
-                "渠道": st.column_config.TextColumn("渠道", width="medium"),
-                "目标花费结构(%)": st.column_config.NumberColumn("🟪目标花费结构(%)", format="%.2f"),
-                "目标1-3过件率(%)": st.column_config.NumberColumn("🟩目标过件率(%)", format="%.2f"),
-                "目标CPS(%)": st.column_config.NumberColumn("🟧目标CPS(%)", format="%.2f"),
-                "历史花费结构(%)": st.column_config.NumberColumn("参考·最新月花费结构(%)", format="%.2f"),
-                "历史1-3 T0过件率(%)": st.column_config.NumberColumn("参考·最新月过件率(%)", format="%.2f"),
-                "历史1-8 T0CPS(%)": st.column_config.NumberColumn("参考·最新月CPS(%)", format="%.2f"),
-                "历史T0申完成本(元)": st.column_config.NumberColumn("参考·最新月申完成本(元)", format="%.0f"),
-            },
+            disabled=disabled_cols,
+            column_config=col_config,
             key="result_channel_editor",
         )
-        st.caption("建议先把目标值调到接近最新月基线，再根据业务判断逐项拉高或压低。")
 
-    channel_budget_shares, channel_1_3_rate, channel_1_8_cps, channel_t0_cost = parse_channel_parameter_rows(editor_df)
-    existing_m0_expense = 0.0
-    current_approval_avg = sum(channel_1_3_rate.values()) / len(channel_1_3_rate) if channel_1_3_rate else 0.0
-    current_cps_avg = sum(channel_1_8_cps.values()) / len(channel_1_8_cps) if channel_1_8_cps else 0.0
-    current_cost_avg = sum(channel_t0_cost.values()) / len(channel_t0_cost) if channel_t0_cost else 0.0
-    current_budget_share_avg = (sum(channel_budget_shares.values()) / len(channel_budget_shares) * 100) if channel_budget_shares else 0.0
-    baseline_budget_share_avg = (sum(item["历史花费结构(%)"] for item in latest_share_rows) / len(latest_share_rows)) if latest_share_rows else 0.0
+        # 合计行：预算分配汇总
+        channel_budget_shares, channel_1_3_rate, channel_1_8_cps, channel_t0_cost = parse_channel_parameter_rows(editor_df)
+        allocated_total = sum(max(float(row.get("目标花费(万元)") or 0), 0) for row in editor_df.to_dict("records"))
+        budget_diff = allocated_total - total_budget
+        alloc_cols = st.columns([2, 1])
+        with alloc_cols[0]:
+            if abs(budget_diff) < 1:
+                st.success(f"合计: {allocated_total:,.0f} / {total_budget:,.0f} 万元 ✅ 预算已分配完毕")
+            else:
+                st.warning(f"合计: {allocated_total:,.0f} / {total_budget:,.0f} 万元（差额 {budget_diff:+,.0f} 万元）")
+        with alloc_cols[1]:
+            st.caption("各渠道花费之和可以不等于总预算，差额仅作提示。")
 
-    with st.container(border=True):
-        render_section_header("步骤 5 · 当前目标均值对照", "这里是矩阵编辑后的第一道检查，先看你改出来的整体均值是否偏离最新月太多。")
-        compare_cols = st.columns(4)
+        # MMM 饱和度提示
+        if mmm_recommendations:
+            high_sat_channels = [(ch, rec["saturation"]) for ch, rec in mmm_recommendations.items() if rec.get("saturation", 0) > 80]
+            if high_sat_channels:
+                sat_texts = [f"{ch} 饱和度 {sat:.0f}%" for ch, sat in high_sat_channels]
+                st.warning(f"**MMM 提示：** {', '.join(sat_texts)}，继续增投的边际回报递减。建议将预算向低饱和度渠道倾斜。")
+
+        # 内联均值校验（原步骤 5）
+        existing_m0_expense = 0.0
+        current_approval_avg = sum(channel_1_3_rate.values()) / len(channel_1_3_rate) if channel_1_3_rate else 0.0
+        current_cps_avg = sum(channel_1_8_cps.values()) / len(channel_1_8_cps) if channel_1_8_cps else 0.0
+        current_cost_avg = sum(channel_t0_cost.values()) / len(channel_t0_cost) if channel_t0_cost else 0.0
+        compare_cols = st.columns(3)
         compare_cols[0].metric("当前均值 vs 最新月过件率", f"{current_approval_avg:.2%}", f"{current_approval_avg - baseline_approval:+.2%}")
         compare_cols[1].metric("当前均值 vs 最新月CPS", f"{current_cps_avg:.2%}", f"{current_cps_avg - baseline_cps:+.2%}", delta_color="inverse")
         compare_cols[2].metric("当前均值 vs 最新月申完成本", f"{current_cost_avg:,.0f} 元", f"{current_cost_avg - baseline_cost:+,.0f} 元", delta_color="inverse")
-        compare_cols[3].metric("当前均值 vs 最新月花费结构", f"{current_budget_share_avg:.2f}%", f"{current_budget_share_avg - baseline_budget_share_avg:+.2f}%")
 
+    # --- 目标拆解预览 ---
     with st.container(border=True):
-        render_section_header("步骤 6 · 补充业务参数", "这里补全总表约束。你改这里，会影响历史预估对照和下面的目标拆解表。")
-        summary_cols = st.columns(2)
-        with summary_cols[0]:
-            non_initial_credit = st.number_input(
-                "非初审授信户首借交易额 (亿元)",
-                0.0,
-                value=float(st.session_state.get("result_non_initial_credit", template_params.get("non_initial_credit_transaction", 0.0))),
-                format="%.2f",
-                key="result_non_initial_credit",
-            )
-        with summary_cols[1]:
-            rta_promotion_fee = st.number_input(
-                "RTA费用+促申完 (万元)",
-                0.0,
-                value=float(st.session_state.get("result_rta_promotion_fee", template_params.get("rta_promotion_fee", 0.0))),
-                format="%.2f",
-                key="result_rta_promotion_fee",
-            )
+        render_section_header("📎 目标拆解预览", "检查目标拆解表是否接近预期。")
 
-    with st.container(border=True):
-        render_section_header("步骤 7 · 当前目标拆解表", "先看这张表是否已经接近你想提交的目标版预算表；如果不对，继续回到上面改参数。")
         target_preview_df = _build_target_preview_table(
             df_raw1=data["df_raw1"],
             df_raw2=data["df_raw2"],
@@ -870,11 +1043,11 @@ def _render_parameter_panel() -> bool:
             channel_1_3_rate=channel_1_3_rate,
             channel_1_8_cps=channel_1_8_cps,
             channel_t0_cost=channel_t0_cost,
-            non_initial_credit=float(st.session_state.get("result_non_initial_credit", template_params.get("non_initial_credit_transaction", 0.0))),
-            rta_promotion_fee=float(st.session_state.get("result_rta_promotion_fee", template_params.get("rta_promotion_fee", 0.0))),
+            non_initial_credit=non_initial_credit,
+            rta_promotion_fee=rta_promotion_fee,
             month_total_days=month_total_days,
             days_elapsed=days_elapsed,
-            m0_calc_period=int(st.session_state.get("result_m0_calc_period", template_params.get("existing_m0_calculation_months", 3))),
+            m0_calc_period=m0_calc_period,
             last_month_data=last_month,
         )
         target_month_label = f"{days_elapsed} / {month_total_days} 天口径"
@@ -890,18 +1063,15 @@ def _render_parameter_panel() -> bool:
             hide_index=True,
             height=target_preview_height,
         )
-        st.caption("如果这张表已经接近你的业务目标，就直接进入下一步计算；如果还差得远，返回上面继续调预算、渠道目标或补充参数。")
 
+    # --- 计算按钮 ---
     with st.container(border=True):
-        render_section_header("步骤 7 · 计算并查看结果", "点击后，下方结果总览和分析 tabs 会一起刷新。你不用回到上面重新找结果入口。")
         confirm_cols = st.columns(3)
         confirm_cols[0].metric("本次预算", f"{total_budget:,.0f} 万元")
         confirm_cols[1].metric("M0周期", f"{m0_calc_period} 个月")
         confirm_cols[2].metric("已完成天数", f"{int(days_elapsed)} / {int(month_total_days)} 天")
         if days_elapsed > month_total_days:
             st.warning("已完成天数大于当月总天数，请先修正后再计算。")
-        else:
-            st.info("如果上面的历史参考、参数矩阵和目标拆解表都已经看过，现在就可以计算。")
         if st.button("🚀 计算预算", type="primary", use_container_width=True, disabled=days_elapsed > month_total_days):
             run_calculation(
                 data["df_raw1"],
@@ -918,6 +1088,7 @@ def _render_parameter_panel() -> bool:
                 int(days_elapsed),
                 int(m0_calc_period),
             )
+            st.session_state.pop("goal_scenarios", None)  # Clear stale scenario data
             st.rerun()
 
     update_v01_flow(
@@ -946,16 +1117,17 @@ def _render_parameter_panel() -> bool:
 
 
 ensure_flow_state()
+inject_custom_css()
 flow = get_v01_flow()
-steps = ["数据上传与检查", "预算推算结果"]
+steps = ["数据上传", "历史基线", "总预算", "MMM推荐", "渠道参数", "补充参数", "计算结果"]
 
 render_flow_header(
-    title="📈 V01 · 预算推算结果分析",
-    purpose="基于已上传的数据，在本页完成参数配置、预算计算和结果分析，并决定是否保存方案或继续微调。",
-    chain="数据上传与检查 → 预算推算结果",
+    title="📈 预算推算结果",
+    purpose="配置总预算 → 参考 MMM 推荐 → 调整渠道参数 → 运行双引擎计算 → 查看结果对比",
+    chain="数据上传与检查 → **预算推算结果**",
     current_label="预算推算结果",
 )
-render_step_progress(steps, 2)
+render_step_progress(steps, 3)
 update_v01_flow(current_step=2, next_step="在本页完成参数配置、计算并查看结果")
 
 t1 = st.session_state.get("table1_result")
@@ -973,6 +1145,9 @@ if st.session_state.get("uploaded_data") is None:
 
 _render_parameter_panel()
 
+# --- Goal-driven scenario quick entry (pre-calculation accessible) ---
+render_inline_goal_selector()
+
 if t1 is None:
     render_guidance_card(
         "尚无计算结果",
@@ -982,15 +1157,7 @@ if t1 is None:
     st.stop()
 decision_summary = build_v01_decision_summary(flow, t1, t2)
 
-render_guidance_card(
-    decision_summary["headline"],
-    "结果页会基于预算、CPS 和质量目标给出拍板建议。先看下方决策结论，再决定保存、比较或回调参数。",
-    kind="success" if decision_summary["status"] == "success" else "warning" if decision_summary["status"] == "warning" else "info",
-)
-render_bullet_summary("当前建议动作", decision_summary["recommended_actions"])
-
-# 核心指标
-st.subheader("🎯 核心指标")
+# --- 前置数据：与上次对比 ---
 has_prev = st.session_state.get("previous_table1_result") is not None
 prev_t1 = st.session_state.get("previous_table1_result")
 prev_t2 = st.session_state.get("previous_table2_result")
@@ -1001,72 +1168,194 @@ delta_cps = (t2.total_cps - prev_t2.total_cps) if has_prev and prev_t2 else None
 delta_t0 = (t1.total_t0_transaction - prev_t1.total_t0_transaction) if has_prev and prev_t1 else None
 delta_apr = (t2.approval_rate_1_3_excl_age - prev_t2.approval_rate_1_3_excl_age) if has_prev and prev_t2 else None
 
-m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("总投放花费", f"{t1.total_expense:,.0f} 万元", f"{delta_exp:+,.0f} 万元" if delta_exp is not None else None)
-m2.metric("整体首借交易额", f"{t2.total_transaction:.2f} 亿元", f"{delta_tx:+.2f} 亿元" if delta_tx is not None else None)
-m3.metric("全业务CPS", f"{t2.total_cps:.2%}", f"{delta_cps:+.2%}" if delta_cps is not None else None, delta_color="inverse")
-m4.metric("T0交易额", f"{t1.total_t0_transaction * 10:.2f} 千万元", f"{delta_t0 * 10:+.2f} 千万元" if delta_t0 is not None else None)
-m5.metric("1-3 T0过件率", f"{t2.approval_rate_1_3_excl_age:.2%}", f"{delta_apr:+.2%}" if delta_apr is not None else None)
+# --- 关键发现自动生成 ---
+def _build_key_findings(t1_result, t2_result, prev_t1_result, prev_t2_result) -> list[str]:
+    findings = []
+    # 排除"总计"行，只看渠道级别数据
+    channels = [ch for ch in t1_result.channels if ch.channel_name != "总计"]
 
-action_left, action_mid, action_right = st.columns(3)
-if action_left.button("⬅️ 返回数据检查页", use_container_width=True):
-    st.switch_page("pages/1_预算输入与配置.py")
-if action_mid.button("📌 聚焦总览与方案", use_container_width=True):
-    st.toast("继续查看下方总览、方案对比与数据洞察。")
-if action_right.button("💾 前往方案管理", use_container_width=True):
-    st.toast("请在页面底部的「方案管理」Tab 中保存或比较方案。")
+    if channels:
+        # 1. CPS最低与最高渠道（效率建议）
+        valid_cps_channels = [ch for ch in channels if ch.cps_1_8 and ch.cps_1_8 > 0]
+        if valid_cps_channels:
+            best_ch = min(valid_cps_channels, key=lambda c: c.cps_1_8)
+            worst_ch = max(valid_cps_channels, key=lambda c: c.cps_1_8)
+            if best_ch.channel_name != worst_ch.channel_name:
+                findings.append(
+                    f"效率最优渠道：{best_ch.channel_name}（CPS {best_ch.cps_1_8:.2%}）；"
+                    f"效率最低渠道：{worst_ch.channel_name}（CPS {worst_ch.cps_1_8:.2%}），"
+                    f"可考虑向效率较优渠道倾斜预算。"
+                )
 
-render_next_step_card(
-    "按状态执行下一步",
-    "若主要目标已达成，优先保存或对比方案；若仍有未达成指标，先根据下方短板回看本页上方参数区或返回数据检查页。",
-)
+        # 2. 花费占比最高渠道效率评估
+        max_exp_ch = max(channels, key=lambda c: c.expense)
+        avg_cps = t2_result.total_cps if t2_result.total_cps else 0.0
+        if avg_cps > 0 and max_exp_ch.cps_1_8 > 0:
+            diff_pct = (max_exp_ch.cps_1_8 - avg_cps) / avg_cps
+            if diff_pct > 0.05:
+                findings.append(
+                    f"花费占比最高渠道 {max_exp_ch.channel_name}（占比 {max_exp_ch.expense_structure:.1f}%）"
+                    f"的 CPS 高于全业务均值 {diff_pct:.1%}，拖高了整体成本。"
+                )
+            elif diff_pct < -0.05:
+                findings.append(
+                    f"花费占比最高渠道 {max_exp_ch.channel_name}（占比 {max_exp_ch.expense_structure:.1f}%）"
+                    f"的 CPS 低于全业务均值 {abs(diff_pct):.1%}，对整体降本有正向贡献。"
+                )
 
-targets = flow.get("targets", {})
-if targets:
-    st.subheader("🎯 目标达成判断")
-    goal_cols = st.columns(3)
-    check_specs = [
-        ("预算目标", decision_summary["checks"]["budget"], f"{t1.total_expense:,.0f} / {float(targets.get('budget_target', 0)):,.0f} 万元"),
-        ("CPS 目标", decision_summary["checks"]["cps"], f"{t2.total_cps:.2%} / {float(targets.get('cps_target', 0)):.2%}"),
-        ("过件率目标", decision_summary["checks"]["approval"], f"{t2.approval_rate_1_3_excl_age:.2%} / {float(targets.get('approval_target', 0)):.2%}"),
-    ]
-    for col, (label, check, value) in zip(goal_cols, check_specs):
-        with col:
-            render_status_card(label, f"{check['label']} · {value}", check["summary"], status=check["status"])
+    # 3. CPS 与上次对比趋势
+    if prev_t2_result is not None:
+        cps_delta = t2_result.total_cps - prev_t2_result.total_cps
+        if abs(cps_delta) >= 0.001:
+            direction = "下降" if cps_delta < 0 else "上升"
+            findings.append(
+                f"全业务CPS较上次计算{direction} {abs(cps_delta):.2%}，"
+                f"当前为 {t2_result.total_cps:.2%}。"
+            )
 
-    blocker_order = sorted(
-        [
-            ("预算", abs(decision_summary["checks"]["budget"]["delta"] or 0)),
-            ("CPS", abs(decision_summary["checks"]["cps"]["delta"] or 0)),
-            ("过件率", abs(decision_summary["checks"]["approval"]["delta"] or 0)),
-        ],
-        key=lambda item: item[1],
-        reverse=True,
-    )
-    render_bullet_summary(
-        "当前最关键的决策判断",
-        [
-            f"当前最主要的约束项是 {blocker_order[0][0]}。",
-            "可保存当前方案。" if decision_summary["status"] == "success" else "建议先微调后再保存。" if decision_summary["status"] == "info" else "当前不建议直接保存为正式场景。",
-        ],
-    )
+    # 4. 预算分配完整性
+    targets = st.session_state.get("v01_flow", {}).get("targets", {})
+    budget_target = float(targets.get("budget_target", 0) or 0)
+    if budget_target > 0:
+        utilization = t1_result.total_expense / budget_target
+        if abs(utilization - 1.0) < 0.001:
+            findings.append(f"预算已按 {t1_result.total_expense:,.0f} 万元完整分配。")
+        elif utilization < 1.0:
+            findings.append(
+                f"当前花费 {t1_result.total_expense:,.0f} 万元，"
+                f"距目标预算尚余 {budget_target - t1_result.total_expense:,.0f} 万元未分配。"
+            )
 
-    if decision_summary["status"] == "success":
-        render_guidance_card("推荐动作：保存或进入方案对比", "主要目标已经达成，建议优先把当前方案保存下来，再和历史方案做拍板对比。", kind="success")
-    elif decision_summary["status"] == "info":
-        render_guidance_card("推荐动作：优先做小幅调参", "当前更像接近达成而非完全失败，建议先使用快速调参或只回调一类关键参数。")
-    else:
-        render_guidance_card("推荐动作：回看上方参数区", "当前存在明显未达成目标，建议按建议动作的优先级重新设置预算、CPS 或过件率假设。", kind="warning")
+    return findings if findings else ["当前方案各渠道参数正常，可进入方案评审阶段。"]
 
-# 5个Tab
-tabs = st.tabs(["🏠 总览", "📊 渠道结果", "👥 客群结果", "🔢 系数追溯", "💾 方案管理"])
+
+key_findings = _build_key_findings(t1, t2, prev_t1, prev_t2)
+
+# --- V4.3c: 智能建议 Banner ---
+mmm_model = st.session_state.get("mmm_model")
+if mmm_model is not None:
+    st.markdown("""<div class="smart-banner">
+        <div style="font-size:18px;flex-shrink:0">🤖</div>
+        <div style="flex:1">
+            <div style="font-size:13px;font-weight:700;margin-bottom:2px">智能建议</div>
+            <div style="font-size:12px;color:#666;line-height:1.5">基于 MMM 模型饱和度分析，可参考 MMM 模型洞察页的优化建议进行渠道调整。</div>
+        </div>
+    </div>""", unsafe_allow_html=True)
+
+# --- V4.3c: Decision Card ---
+with st.container(border=True):
+    # a) 核心决策结论（1-2句话）
+    status_icon = {"success": "✅", "warning": "⚠️"}.get(decision_summary["status"], "ℹ️")
+    st.markdown(f"### {status_icon} {decision_summary['headline']}")
+    actions_text = "　".join(decision_summary["recommended_actions"])
+    st.markdown(f"<span style='color:#666;font-size:0.9rem;'>{actions_text}</span>", unsafe_allow_html=True)
+
+    st.divider()
+
+    # b) 关键状态标签 chips
+    chip_items = []
+    # 预算分配状态
+    budget_check = decision_summary["checks"]["budget"]
+    cps_check = decision_summary["checks"]["cps"]
+    approval_check = decision_summary["checks"]["approval"]
+    chip_map = {"success": "✅", "warning": "⚠️", "danger": "❌", "info": "ℹ️"}
+    chip_items.append(f"{chip_map.get(budget_check['status'], 'ℹ️')} 预算分配 {budget_check['label']}")
+    chip_items.append(f"{chip_map.get(cps_check['status'], 'ℹ️')} CPS {cps_check['label']}")
+    chip_items.append(f"{chip_map.get(approval_check['status'], 'ℹ️')} 过件率 {approval_check['label']}")
+    if has_prev:
+        cps_vs_prev = "低于上次" if (delta_cps is not None and delta_cps < 0) else ("高于上次" if (delta_cps is not None and delta_cps > 0) else "与上次持平")
+        chip_items.append(f"📊 CPS {cps_vs_prev}")
+    st.markdown("　".join(f"`{chip}`" for chip in chip_items))
+
+    st.divider()
+
+    # c) 5个核心指标 metric 卡片
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("总投放花费", f"{t1.total_expense:,.0f} 万元", f"{delta_exp:+,.0f} 万元" if delta_exp is not None else None)
+    m2.metric("整体首借交易额", f"{t2.total_transaction:.2f} 亿元", f"{delta_tx:+.2f} 亿元" if delta_tx is not None else None)
+    m3.metric("全业务CPS", f"{t2.total_cps:.2%}", f"{delta_cps:+.2%}" if delta_cps is not None else None, delta_color="inverse")
+    m4.metric("T0交易额", f"{t1.total_t0_transaction * 10:.2f} 千万元", f"{delta_t0 * 10:+.2f} 千万元" if delta_t0 is not None else None)
+    m5.metric("1-3 T0过件率", f"{t2.approval_rate_1_3_excl_age:.2%}", f"{delta_apr:+.2%}" if delta_apr is not None else None)
+
+    st.divider()
+
+    # d) 关键发现（动态 bullets）
+    st.markdown("**关键发现**")
+    for finding in key_findings:
+        st.markdown(f"- {finding}")
+
+# --- 预算结构与效率总览图表 ---
+with st.container(border=True):
+    st.markdown("#### 预算结构与效率总览")
+    chart_cols = st.columns(2)
+    with chart_cols[0]:
+        # 渠道花费分布饼图
+        channels = [ch for ch in t1.channels if ch.channel_name != "总计"]
+        if channels:
+            fig_pie = go.Figure(data=[go.Pie(
+                labels=[ch.channel_name for ch in channels],
+                values=[ch.expense for ch in channels],
+                hole=0.4,
+                textinfo="label+percent",
+                marker=dict(colors=["#2E7D32", "#E53935", "#1976D2", "#FF9800", "#9E9E9E"]),
+            )])
+            fig_pie.update_layout(title="渠道花费分布", height=320, margin=dict(t=40, b=20))
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+    with chart_cols[1]:
+        # 渠道交易额贡献柱状图
+        if channels:
+            fig_bar = go.Figure()
+            fig_bar.add_trace(go.Bar(
+                name="T0交易额",
+                x=[ch.channel_name for ch in channels],
+                y=[ch.t0_transaction for ch in channels],
+                marker_color="#1976D2",
+            ))
+            fig_bar.add_trace(go.Bar(
+                name="M0交易额",
+                x=[ch.channel_name for ch in channels],
+                y=[ch.m0_transaction for ch in channels],
+                marker_color="#90CAF9",
+            ))
+            fig_bar.update_layout(
+                title="渠道交易额贡献",
+                yaxis_title="交易额 (亿元)",
+                barmode="stack",
+                height=320,
+                margin=dict(t=40, b=20),
+                legend=dict(orientation="h", y=1.1),
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+# --- 历史达成与当月预估（折叠）---
+data = st.session_state.get("uploaded_data")
+if data is not None:
+    with st.expander("📊 历史达成与当月预估 (点击展开)", expanded=False):
+        flow_state = get_v01_flow()
+        inputs = flow_state.get("inputs", {})
+        _days = int(inputs.get("days_elapsed", DEFAULT_DAYS_ELAPSED))
+        _month_days = int(inputs.get("month_total_days", DEFAULT_MONTH_DAYS))
+        _render_historical_baseline_panel(
+            data["df_raw1"],
+            month_total_days=_month_days,
+            days_elapsed=_days,
+        )
+
+# --- 分项详情 Tabs (V4.3c: 6 tabs) ---
+st.markdown("---")
+st.caption("**分项详情**")
+
+tabs = st.tabs(["📊 渠道", "👥 客群", "🛡️ 护栏", "🎯 方案", "🤖 双引擎", "📈 What-if"])
 with tabs[0]:
-    render_tab_overview()
-with tabs[1]:
     render_tab_channel_result()
-with tabs[2]:
+with tabs[1]:
     render_tab_customer_result()
+with tabs[2]:
+    render_tab_guardrail()
 with tabs[3]:
-    render_tab_coefficient_trace()
+    render_tab_goal_scenarios()
 with tabs[4]:
-    render_tab_scenario_manager()
+    render_tab_model_comparison()
+with tabs[5]:
+    render_tab_whatif()

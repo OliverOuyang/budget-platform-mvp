@@ -46,15 +46,18 @@ def export_to_excel(
         ExporterError: 导出失败时抛出
     """
     try:
-        # 生成默认文件名
-        if output_path is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"预算推算结果_{timestamp}.xlsx"
-            output_path = str(Path.cwd() / "export" / filename)
+        is_filelike = hasattr(output_path, 'write')
 
-        # 确保输出目录存在
-        output_dir = Path(output_path).parent
-        output_dir.mkdir(parents=True, exist_ok=True)
+        if not is_filelike:
+            # 生成默认文件名
+            if output_path is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"预算推算结果_{timestamp}.xlsx"
+                output_path = str(Path.cwd() / "export" / filename)
+
+            # 确保输出目录存在
+            output_dir = Path(output_path).parent
+            output_dir.mkdir(parents=True, exist_ok=True)
 
         # 转换为DataFrame
         df1 = table1.to_dataframe()
@@ -69,10 +72,12 @@ def export_to_excel(
             df1_formatted.to_excel(writer, sheet_name='渠道维度预算表', index=False)
             df2_formatted.to_excel(writer, sheet_name='客群维度汇总表', index=False)
 
-        # 应用样式
-        _apply_excel_styles(output_path)
+        # 应用样式 (only for file paths, not file-like objects)
+        if not is_filelike:
+            _apply_excel_styles(output_path)
+            return str(Path(output_path).resolve())
 
-        return str(Path(output_path).resolve())
+        return output_path
 
     except Exception as e:
         raise ExporterError(f"导出Excel失败: {e}")
