@@ -685,7 +685,6 @@ def _render_template_management(
             overwrite_cols = st.columns(2)
             if overwrite_cols[0].button("覆盖现有模板", key="result_confirm_overwrite", use_container_width=True):
                 save_name = st.session_state[overwrite_key]
-                st.session_state["result_template_name"] = save_name
             if overwrite_cols[1].button("取消覆盖", key="result_cancel_overwrite", use_container_width=True):
                 st.session_state.pop(overwrite_key, None)
                 st.rerun()

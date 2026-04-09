@@ -20,7 +20,7 @@ from app.ui_utils import (
     reset_v01_flow_for_new_upload,
     update_v01_flow,
 )
-from core.data_loader import load_excel, validate_excel_structure, load_guardrail_data, validate_guardrail_flexible
+from core.data_loader import load_excel, validate_excel_structure, load_guardrail_data
 
 
 def _render_upload_diagnostics(df_raw1: pd.DataFrame, df_raw2: pd.DataFrame, file_name: str) -> Dict[str, int]:

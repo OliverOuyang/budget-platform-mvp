@@ -28,6 +28,8 @@ defaults = {
     "current_template_params": {},
     "comparison_scenarios": {},
     "last_file_id": None,
+    "mmm_model": None,
+    "operation_logs": [],
 }
 for k, v in defaults.items():
     if k not in st.session_state:

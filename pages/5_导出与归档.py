@@ -91,7 +91,7 @@ with st.expander("📝 操作日志", expanded=False):
         for log in reversed(logs[-20:]):
             st.caption(log)
     else:
-        st.caption("暂无操作记录。计算完成后会自动记录。")
+        st.caption("暂无操作记录。")
 
 # ==================== 提示 ====================
 st.markdown("---")

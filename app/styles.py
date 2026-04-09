@@ -28,12 +28,36 @@ def inject_custom_css():
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, #1A3A2A 0%, #1E4D35 100%);
 }
+[data-testid="stSidebar"],
+[data-testid="stSidebar"] * {
+    color: rgba(255,255,255,0.85) !important;
+}
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
-    color: rgba(255,255,255,0.85);
+    color: rgba(255,255,255,0.85) !important;
 }
 [data-testid="stSidebar"] .stRadio label,
 [data-testid="stSidebar"] .stSelectbox label {
     color: rgba(255,255,255,0.7) !important;
+}
+[data-testid="stSidebar"] small,
+[data-testid="stSidebar"] .stCaption,
+[data-testid="stSidebar"] caption {
+    color: rgba(255,255,255,0.55) !important;
+}
+[data-testid="stSidebar"] a {
+    color: rgba(255,255,255,0.95) !important;
+}
+[data-testid="stSidebar"] [data-testid="stExpander"] summary {
+    color: rgba(255,255,255,0.85) !important;
+}
+[data-testid="stSidebar"] hr {
+    border-color: rgba(255,255,255,0.15) !important;
+}
+[data-testid="stSidebar"] .stProgress > div > div {
+    background-color: rgba(255,255,255,0.2) !important;
+}
+[data-testid="stSidebar"] .stProgress > div > div > div {
+    background-color: #66BB6A !important;
 }
 
 /* Main background */
