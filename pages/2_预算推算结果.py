@@ -328,6 +328,22 @@ def _render_parameter_panel() -> bool:
         compare_cols[1].metric("当前均值 vs 最新月CPS", f"{current_cps_avg:.2%}", f"{current_cps_avg - baseline_cps:+.2%}", delta_color="inverse")
         compare_cols[2].metric("当前均值 vs 最新月申完成本", f"{current_cost_avg:,.0f} 元", f"{current_cost_avg - baseline_cost:+,.0f} 元", delta_color="inverse")
 
+        # 参数异常值校验
+        _param_warnings = []
+        for ch, cps_val in channel_1_8_cps.items():
+            if cps_val <= 0:
+                _param_warnings.append(f"**{ch}** CPS 为 0，将导致交易额计算异常")
+            elif cps_val > 1:
+                _param_warnings.append(f"**{ch}** CPS={cps_val:.0%} 超过100%，请确认是否正确")
+        for ch, rate_val in channel_1_3_rate.items():
+            if rate_val > 0.9:
+                _param_warnings.append(f"**{ch}** 过件率={rate_val:.0%} 偏高，请确认是否合理")
+        for ch, cost_val in channel_t0_cost.items():
+            if cost_val <= 0:
+                _param_warnings.append(f"**{ch}** 申完成本为 0，将导致申完量计算异常")
+        if _param_warnings:
+            st.warning("参数异常提示：" + "；".join(_param_warnings))
+
     # --- 目标拆解预览 ---
     with st.container(border=True):
         render_section_header("📎 目标拆解预览", "检查目标拆解表是否接近预期。")
