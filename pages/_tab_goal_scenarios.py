@@ -166,7 +166,7 @@ def _render_comparison_table(results: list):
     budgets = [r["t1"].total_expense for r in results]
     _add_row("总预算 (万���)", budgets, lower_is_better=True)
 
-    month_days = results[0]["t2"].month_total_days if hasattr(results[0]["t2"], "month_total_days") else 30
+    month_days = int(st.session_state.get("result_month_total_days", 30))
     daily = [b / month_days for b in budgets]
     _add_row("日均花费 (万元)", daily, lower_is_better=True)
 
@@ -266,13 +266,15 @@ def _render_guardrail_section():
         display_df = display_df[display_df["月份"] == latest]
 
     metric_cols = ["FPD30", "首借终损率", "复借终损率", "复借交易额", "渠道LTV"]
-    styled = display_df.style.applymap(
-        lambda v: _highlight_threshold(v, "FPD30"),
-        subset=["FPD30"] if "FPD30" in display_df.columns else [],
-    )
+    styled = display_df.style
+    if "FPD30" in display_df.columns:
+        styled = styled.map(
+            lambda v: _highlight_threshold(v, "FPD30"),
+            subset=["FPD30"],
+        )
     for col in ["首借终损率", "复借终损率"]:
         if col in display_df.columns:
-            styled = styled.applymap(
+            styled = styled.map(
                 lambda v, c=col: _highlight_threshold(v, c),
                 subset=[col],
             )

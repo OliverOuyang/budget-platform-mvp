@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>信贷获客预算管理平台 v4.2 — 中度重构版线稿</title>
+<style>
+:root{--bg:#FAFAF8;--surface:#fff;--panel-bg:#F7F7F5;--primary:#1A3A2A;--accent:#2E7D32;--accent-light:#E8F5E9;--purple:#7B1FA2;--purple-light:#F3E5F5;--info:#1976D2;--info-light:#E3F2FD;--warning:#F57C00;--warning-light:#FFF3E0;--danger:#D32F2F;--danger-light:#FFEBEE;--text:#212121;--text2:#666;--text3:#999;--border:#E0E0E0;--radius:8px;--shadow:0 1px 3px rgba(0,0,0,.08)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,"Noto Sans SC",sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.6}
+/* Layout */
+.layout{display:flex;min-height:100vh}
+.sidebar{width:240px;background:var(--primary);color:#fff;padding:16px 0;position:fixed;height:100vh;overflow-y:auto;z-index:100}
+.sidebar h2{padding:0 16px 12px;font-size:15px;border-bottom:1px solid rgba(255,255,255,.15);margin-bottom:10px}
+.nav-group-title{font-size:10px;text-transform:uppercase;color:rgba(255,255,255,.45);padding:4px 16px;letter-spacing:1px}
+.nav-item{display:block;padding:9px 16px;border-radius:6px;color:rgba(255,255,255,.75);cursor:pointer;transition:.2s;font-size:12px;margin:1px 8px}
+.nav-item:hover{background:rgba(255,255,255,.1)}
+.nav-item.active{background:var(--accent);color:#fff;font-weight:600}
+.sidebar-footer{position:absolute;bottom:0;left:0;right:0;padding:10px 16px;font-size:10px;color:rgba(255,255,255,.35);border-top:1px solid rgba(255,255,255,.1)}
+.main{margin-left:240px;flex:1}
+.page{display:none}
+.page.active{display:block}
+
+/* Toolbar */
+.toolbar{display:flex;align-items:center;gap:8px;padding:8px 20px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50}
+.toolbar-title{font-weight:700;font-size:14px;margin-right:auto}
+.toolbar .btn{font-size:11px;padding:5px 12px}
+
+/* Split Panel */
+.split{display:flex;height:calc(100vh - 41px)}
+.panel-left{width:420px;min-width:380px;max-width:480px;background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:16px;position:relative}
+.panel-right{flex:1;background:var(--panel-bg);overflow-y:auto;padding:20px 24px}
+
+/* Panel sections */
+.panel-section{margin-bottom:16px}
+.panel-section-title{font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.panel-section-title .badge{font-size:9px}
+
+/* Common */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px;box-shadow:var(--shadow)}
+.badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:700;vertical-align:middle}
+.badge-new{background:var(--accent-light);color:var(--accent)}
+.badge-change{background:var(--info-light);color:var(--info)}
+.badge-mmm{background:var(--purple-light);color:var(--purple)}
+.badge-redesign{background:#FFF9C4;color:#F57F17}
+.metrics{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.metric{flex:1;min-width:100px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);text-align:center;background:var(--surface)}
+.metric-label{font-size:10px;color:var(--text3);margin-bottom:2px}
+.metric-value{font-size:17px;font-weight:700}
+.metric-sm .metric-value{font-size:14px}
+.metric-delta{font-size:10px;margin-top:1px}
+.metric-delta.positive{color:var(--accent)}
+.metric-delta.negative{color:var(--danger)}
+.tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px}
+.tab{padding:8px 16px;cursor:pointer;font-size:12px;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-2px;transition:.2s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.tab-content{display:none}
+.tab-content.active{display:block}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th,td{padding:6px 8px;border:1px solid var(--border);text-align:right}
+th{background:#f5f5f3;font-weight:600;text-align:center;font-size:10px;white-space:nowrap}
+td:first-child,th:first-child{text-align:left;font-weight:500}
+tr.total{background:var(--info-light);font-weight:700}
+.chart-placeholder{border:2px dashed var(--border);border-radius:var(--radius);padding:30px 16px;text-align:center;color:var(--text3);font-size:11px;margin-bottom:10px;min-height:160px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:8px 16px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:.2s;gap:4px}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#256d29}
+.btn-secondary{background:var(--surface);color:var(--text);border:1px solid var(--border)}.btn-secondary:hover{background:#f5f5f5}
+.btn-mmm{background:var(--purple);color:#fff}
+.btn-lg{padding:12px 24px;font-size:14px}
+.btn-sm{padding:5px 10px;font-size:11px}
+.btn-full{width:100%}
+.callout{padding:10px 12px;border-radius:var(--radius);font-size:11px;margin-bottom:10px;border-left:3px solid}
+.callout-info{background:var(--info-light);border-color:var(--info);color:#0d47a1}
+.callout-success{background:var(--accent-light);border-color:var(--accent);color:#1b5e20}
+.callout-warning{background:var(--warning-light);border-color:var(--warning);color:#e65100}
+.callout-mmm{background:var(--purple-light);border-color:var(--purple);color:#4a148c}
+.upload-zone{border:2px dashed var(--accent);border-radius:var(--radius);padding:40px 20px;text-align:center;background:var(--accent-light);cursor:pointer}
+.upload-zone h3{margin-bottom:6px;color:var(--accent);font-size:15px}
+.status-badge{display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.status-ok{background:var(--accent-light);color:var(--accent)}
+.status-warn{background:var(--warning-light);color:var(--warning)}
+.status-bad{background:var(--danger-light);color:var(--danger)}
+.decision-card{background:linear-gradient(135deg,#e8f5e9,#f1f8e9);border:1px solid #c8e6c9;border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.decision-headline{font-size:14px;font-weight:700;margin-bottom:6px;color:var(--primary)}
+.decision-badges{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.input-compact{padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:100%}
+.input-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.input-row label{font-size:11px;color:var(--text2);min-width:90px;flex-shrink:0}
+.slider-track{width:100%;height:5px;background:#e0e0e0;border-radius:3px;position:relative;margin:6px 0}
+.slider-fill{height:100%;background:var(--accent);border-radius:3px}
+.goal-card{padding:10px;border:2px solid var(--border);border-radius:var(--radius);cursor:pointer;text-align:center;transition:.2s}
+.goal-card:hover{border-color:var(--accent);background:var(--accent-light)}
+.goal-card.active{border-color:var(--accent);background:var(--accent-light)}
+.goal-card .icon{font-size:20px;margin-bottom:4px}
+.goal-card .title{font-size:11px;font-weight:700}
+.goal-card .desc{font-size:9px;color:var(--text3)}
+.mmm-mini{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--purple);border-radius:6px;margin-bottom:6px;background:var(--purple-light);font-size:11px}
+.mmm-mini .ch{font-weight:600;min-width:60px}
+.mmm-mini .val{color:var(--purple);font-weight:700}
+.mmm-mini .sat{font-size:10px;color:var(--text3)}
+.watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:16px;color:rgba(0,0,0,.08);font-weight:700;pointer-events:none;white-space:nowrap}
+.expander{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px}
+.expander summary{padding:10px 12px;cursor:pointer;font-weight:600;font-size:12px;list-style:none;display:flex;align-items:center;gap:6px}
+.expander summary::before{content:"▶";font-size:9px;transition:.2s}
+.expander[open] summary::before{transform:rotate(90deg)}
+.expander-content{padding:0 12px 12px}
+.sticky-calc{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px;margin:0 -16px}
+.col-blue{background:#e3f2fd}
+.col-purple{background:#f3e5f5}
+.col-gray{background:#f5f5f5}
+</style>
+</head>
+<body>
+<div class="layout">
+<!-- Sidebar -->
+<div class="sidebar">
+  <h2>预算管理平台 v4.2</h2>
+  <div class="nav-group-title">工作流</div>
+  <div class="nav-item active" onclick="showPage('page1')">📋 数据准备</div>
+  <div class="nav-item" onclick="showPage('page2')">📊 预算工作台</div>
+  <div style="margin-top:16px">
+    <div class="nav-group-title">工具</div>
+    <div class="nav-item" onclick="alert('打开MMM训练弹窗')">🧪 MMM模型训练</div>
+    <div class="nav-item">📥 导出报告</div>
+    <div class="nav-item">⚙️ 设置</div>
+  </div>
+  <div class="sidebar-footer">v4.2 中度重构版 · 2026-04-08<br>功能评审线稿（非最终UI）</div>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+<!-- ==================== PAGE 1: 数据准备 ==================== -->
+<div class="page active" id="page1">
+  <div class="toolbar">
+    <span class="toolbar-title">📋 数据准备</span>
+    <span style="font-size:11px;color:var(--text3)">上传数据 → 自动质检 → 进入工作台</span>
+  </div>
+  <div style="padding:24px 32px;max-width:900px;margin:0 auto">
+    <!-- Upload -->
+    <div class="upload-zone" style="margin-bottom:20px">
+      <h3>📂 拖放或点击上传 Excel 文件</h3>
+      <p style="font-size:12px;color:var(--text2)">支持 .xlsx 格式 · 需含 raw_达成情况 + raw_客群首借金额</p>
+    </div>
+
+    <!-- Auto quality result -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+        <div style="font-size:28px;font-weight:700;color:var(--accent)">96</div>
+        <div>
+          <div style="font-weight:700">数据质量评分 <span class="status-badge status-ok">✓ 通过</span></div>
+          <div style="font-size:11px;color:var(--text2)">budget_2025Q1.xlsx · 1,247+856行 · 5月交集 · 0缺失</div>
+        </div>
+        <span class="badge badge-new" style="margin-left:auto">NEW: 自动质检</span>
+      </div>
+
+      <details class="expander">
+        <summary>查看质检详情</summary>
+        <div class="expander-content">
+          <div class="two-col">
+            <div>
+              <div style="font-weight:600;font-size:11px;margin-bottom:6px">raw_达成情况 (前3行)</div>
+              <table>
+                <tr><th>月份</th><th>渠道</th><th>花费</th><th>CPS</th></tr>
+                <tr><td>2025-01</td><td>腾讯</td><td>892万</td><td>32.1%</td></tr>
+                <tr><td>2025-01</td><td>抖音</td><td>654万</td><td>38.5%</td></tr>
+                <tr><td>2025-01</td><td>精准营销</td><td>423万</td><td>28.7%</td></tr>
+              </table>
+            </div>
+            <div>
+              <div style="font-weight:600;font-size:11px;margin-bottom:6px">检查结果</div>
+              <table>
+                <tr><td>缺失单元格</td><td><span class="status-badge status-ok">0</span></td></tr>
+                <tr><td>重复记录</td><td><span class="status-badge status-ok">0</span></td></tr>
+                <tr><td>时间对齐</td><td><span class="status-badge status-ok">5月</span></td></tr>
+                <tr><td>数值异常</td><td><span class="status-badge status-warn">1项</span></td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- Optional guardrail -->
+    <details class="expander">
+      <summary>📋 护栏指标数据 (可选)</summary>
+      <div class="expander-content">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:8px">上传FPD30、终损率、复借交易额、渠道LTV等指标</div>
+        <div class="upload-zone" style="padding:20px;border-color:var(--border)">
+          <p style="font-size:12px;color:var(--text2)">拖放 CSV/XLSX 文件</p>
+        </div>
+      </div>
+    </details>
+
+    <button class="btn btn-primary btn-lg btn-full" onclick="showPage('page2')" style="margin-top:16px">进入预算工作台 →</button>
+  </div>
+</div>
+
+<!-- ==================== PAGE 2: 预算工作台 (SPLIT PANEL) ==================== -->
+<div class="page" id="page2">
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <span class="toolbar-title">📊 预算工作台</span>
+    <span class="badge badge-redesign">REDESIGN: 左右分栏布局</span>
+    <div style="flex:1"></div>
+    <span style="font-size:11px;color:var(--text2);margin-right:8px">模板: 4月基准方案</span>
+    <button class="btn btn-sm btn-secondary">💾 保存</button>
+    <button class="btn btn-sm btn-secondary">📂 加载 ▼</button>
+    <button class="btn btn-sm btn-secondary">🧪 训练MMM</button>
+    <button class="btn btn-sm btn-secondary">📥 导出</button>
+  </div>
+
+  <div class="split">
+    <!-- ===== LEFT PANEL: 参数控制台 ===== -->
+    <div class="panel-left">
+
+      <!-- Section A: 目标设定 — NEW -->
+      <div class="panel-section">
+        <div class="panel-section-title">🎯 目标设定 <span class="badge badge-new">NEW: 目标先行</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
+          <div class="goal-card active" onclick="selectGoal(this)">
+            <div class="icon">💰</div>
+            <div class="title">降成本</div>
+            <div class="desc">降低CPS</div>
+          </div>
+          <div class="goal-card" onclick="selectGoal(this)">
+            <div class="icon">📈</div>
+            <div class="title">提规模</div>
+            <div class="desc">扩大交易</div>
+          </div>
+          <div class="goal-card" onclick="selectGoal(this)">
+            <div class="icon">⭐</div>
+            <div class="title">提质量</div>
+            <div class="desc">提升过件率</div>
+          </div>
+        </div>
+        <div class="input-row">
+          <label>目标幅度</label>
+          <div style="flex:1">
+            <div class="slider-track"><div class="slider-fill" style="width:50%"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3)">
+              <span>保守 5%</span><span style="font-weight:700;color:var(--accent)">10%</span><span>激进 15%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section B: 预算规模 -->
+      <div class="panel-section">
+        <div class="panel-section-title">💰 预算规模</div>
+        <div class="input-row">
+          <label>总花费 (万元)</label>
+          <div style="flex:1">
+            <div class="slider-track"><div class="slider-fill" style="width:60%"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:11px">
+              <span style="font-weight:700;font-size:16px">3,000</span>
+              <span style="color:var(--accent);font-size:10px">上月 2,850 · +5.3%</span>
+            </div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+          <div class="input-row"><label style="min-width:auto;font-size:10px">月天数</label><input class="input-compact" value="30" style="width:50px"></div>
+          <div class="input-row"><label style="min-width:auto;font-size:10px">已完成</label><input class="input-compact" value="8" style="width:50px"></div>
+          <div class="input-row"><label style="min-width:auto;font-size:10px">M0周期</label>
+            <span style="padding:3px 8px;background:var(--accent);color:#fff;border-radius:3px;font-size:10px">3月</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section C: MMM推荐 — NEW: integrated -->
+      <div class="panel-section">
+        <div class="panel-section-title">🤖 MMM推荐 <span class="badge badge-mmm">R²=0.89</span> <span class="badge badge-new">NEW: 深度融合</span></div>
+        <div style="display:flex;gap:4px;margin-bottom:8px">
+          <span style="padding:3px 10px;background:var(--purple);color:#fff;border-radius:12px;font-size:10px;font-weight:600">使用MMM推荐</span>
+          <span style="padding:3px 10px;background:#eee;border-radius:12px;font-size:10px;color:var(--text3)">手动配置</span>
+        </div>
+        <div class="mmm-mini"><span class="ch">腾讯</span><span class="val">980万</span><span class="sat">饱和72%</span><span style="color:var(--accent);margin-left:auto;font-size:10px">+6.5%</span></div>
+        <div class="mmm-mini"><span class="ch">抖音</span><span class="val">750万</span><span class="sat">饱和58%</span><span style="color:var(--accent);margin-left:auto;font-size:10px">+10.3%</span></div>
+        <div class="mmm-mini"><span class="ch">精准营销</span><span class="val">520万</span><span class="sat">饱和45%</span><span style="color:var(--accent);margin-left:auto;font-size:10px">+15.6%</span></div>
+        <div class="mmm-mini"><span class="ch">付费商店</span><span class="val">480万</span><span class="sat" style="color:var(--danger)">饱和86%</span><span style="color:var(--danger);margin-left:auto;font-size:10px">-7.7%</span></div>
+        <div class="mmm-mini"><span class="ch">免费渠道</span><span class="val">270万</span><span class="sat">-</span><span style="color:var(--text3);margin-left:auto;font-size:10px">-3.6%</span></div>
+      </div>
+
+      <!-- Section D: 渠道参数矩阵 -->
+      <div class="panel-section">
+        <div class="panel-section-title">📋 渠道参数</div>
+        <div style="margin-bottom:6px">
+          <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px">
+            <span>分配: <b>2,980 / 3,000万</b></span>
+            <span class="status-badge status-ok" style="font-size:9px">✓ OK</span>
+          </div>
+          <div style="height:4px;background:#e0e0e0;border-radius:2px;overflow:hidden">
+            <div style="height:100%;width:99.3%;background:var(--accent)"></div>
+          </div>
+        </div>
+        <table>
+          <tr><th>渠道</th><th class="col-blue">花费</th><th class="col-blue">过件率</th><th class="col-blue">CPS</th></tr>
+          <tr><td>腾讯</td><td class="col-blue">950</td><td class="col-blue">16.0%</td><td class="col-blue">32.5%</td></tr>
+          <tr><td>抖音</td><td class="col-blue">720</td><td class="col-blue">14.0%</td><td class="col-blue">37.8%</td></tr>
+          <tr><td>精准营销</td><td class="col-blue">500</td><td class="col-blue">11.5%</td><td class="col-blue">28.0%</td></tr>
+          <tr><td>付费商店</td><td class="col-blue">480</td><td class="col-blue">9.5%</td><td class="col-blue">40.0%</td></tr>
+          <tr><td>免费渠道</td><td class="col-blue">330</td><td class="col-blue">22.0%</td><td class="col-blue">0.0%</td></tr>
+          <tr class="total"><td>合计</td><td>2,980</td><td>14.6%</td><td>27.7%</td></tr>
+        </table>
+      </div>
+
+      <!-- Section E: 补充参数 -->
+      <details class="expander">
+        <summary>📎 补充参数</summary>
+        <div class="expander-content">
+          <div class="input-row"><label>非初审交易额(亿)</label><input class="input-compact" value="0.35" style="width:80px"></div>
+          <div class="input-row"><label>RTA费用(万)</label><input class="input-compact" value="120" style="width:80px"></div>
+        </div>
+      </details>
+
+      <!-- Sticky Calculate -->
+      <div class="sticky-calc">
+        <button class="btn btn-primary btn-full" onclick="showResults2()">🚀 计算预算</button>
+      </div>
+    </div>
+
+    <!-- ===== RIGHT PANEL: 预览与结果 ===== -->
+    <div class="panel-right">
+
+      <!-- Pre-calculation: preview mode -->
+      <div id="preview-mode">
+        <div style="text-align:center;color:var(--text3);padding:40px 0 20px">
+          <div style="font-size:16px;font-weight:700;margin-bottom:8px">📊 实时预览</div>
+          <div style="font-size:12px">调整左侧参数，预览将自动更新</div>
+          <span class="badge badge-new" style="margin-top:8px;display:inline-block">NEW: 实时预览</span>
+        </div>
+
+        <!-- Preview metrics -->
+        <div class="metrics" style="margin-bottom:16px">
+          <div class="metric metric-sm"><div class="metric-label">预估总花费</div><div class="metric-value">3,000万</div></div>
+          <div class="metric metric-sm"><div class="metric-label">预估CPS</div><div class="metric-value" style="color:var(--warning)">~35%</div></div>
+          <div class="metric metric-sm"><div class="metric-label">预估T0交易</div><div class="metric-value">~0.85亿</div></div>
+        </div>
+
+        <!-- Target preview table -->
+        <div class="card">
+          <div style="font-weight:600;font-size:12px;margin-bottom:8px">目标拆解预览 <span style="font-size:10px;color:var(--text3)">· 基于当前参数估算</span></div>
+          <table>
+            <tr><th>渠道</th><th>花费(万)</th><th>花费占比</th><th>预估CPS</th><th>预估T0(亿)</th></tr>
+            <tr class="total"><td><b>总计</b></td><td><b>2,980</b></td><td><b>100%</b></td><td><b>~35.3%</b></td><td><b>~0.85</b></td></tr>
+            <tr><td>腾讯</td><td>950</td><td>31.9%</td><td>32.5%</td><td>0.29</td></tr>
+            <tr><td>抖音</td><td>720</td><td>24.2%</td><td>37.8%</td><td>0.19</td></tr>
+            <tr><td>精准营销</td><td>500</td><td>16.8%</td><td>28.0%</td><td>0.18</td></tr>
+            <tr><td>付费商店</td><td>480</td><td>16.1%</td><td>40.0%</td><td>0.12</td></tr>
+            <tr><td>免费渠道</td><td>330</td><td>11.1%</td><td>0.0%</td><td>0.07</td></tr>
+          </table>
+          <div style="text-align:center;font-size:10px;color:var(--text3);margin-top:8px;font-style:italic">
+            预览模式 — 点击左下角「计算预算」获取精确结果
+          </div>
+        </div>
+
+        <!-- Goal scenarios preview -->
+        <div class="card" style="border-color:var(--accent)">
+          <div style="font-weight:600;font-size:12px;margin-bottom:8px">🎯 目标方案预览 <span class="badge badge-new">NEW</span></div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:8px">方向: 降成本 · 幅度: 10%</div>
+          <div class="metrics">
+            <div class="metric metric-sm"><div class="metric-label">基线CPS</div><div class="metric-value" style="font-size:13px">35.3%</div></div>
+            <div class="metric metric-sm" style="border-color:var(--accent)"><div class="metric-label">目标CPS</div><div class="metric-value" style="font-size:13px;color:var(--accent)">31.8%</div></div>
+            <div class="metric metric-sm"><div class="metric-label">变化</div><div class="metric-value positive" style="font-size:13px">-3.5pp</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Post-calculation: results -->
+      <div id="results-mode" style="display:none">
+        <!-- Decision summary -->
+        <div class="decision-card">
+          <div class="decision-headline">✅ 3,000万方案：CPS 35.3% (↓0.8pp)，首借 2.35亿 (↑5.4%)</div>
+          <div class="decision-badges">
+            <span class="status-badge status-ok">✓ 预算分配</span>
+            <span class="status-badge status-ok">✓ CPS改善</span>
+            <span class="status-badge status-warn">⚠ 付费商店饱和</span>
+          </div>
+          <div style="font-size:11px;line-height:1.8">
+            <b>核心发现：</b>精准营销效率最优(CPS 28%)建议增投 · 付费商店饱和86%建议控量 · 整体CPS受益于抖音份额提升
+          </div>
+        </div>
+
+        <!-- Core metrics -->
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">总花费</div><div class="metric-value">3,000万</div><div class="metric-delta positive">+150</div></div>
+          <div class="metric"><div class="metric-label">首借交易额</div><div class="metric-value">2.35亿</div><div class="metric-delta positive">+0.12</div></div>
+          <div class="metric"><div class="metric-label">全业务CPS</div><div class="metric-value" style="color:var(--warning)">35.3%</div><div class="metric-delta positive">-0.8pp</div></div>
+          <div class="metric"><div class="metric-label">T0交易额</div><div class="metric-value">0.85亿</div><div class="metric-delta positive">+0.05</div></div>
+          <div class="metric"><div class="metric-label">过件率</div><div class="metric-value" style="color:var(--accent)">14.6%</div><div class="metric-delta positive">+0.2pp</div></div>
+        </div>
+
+        <!-- Charts -->
+        <div class="two-col">
+          <div class="chart-placeholder"><div style="font-weight:600">渠道花费分布</div><div>环形图 · 5渠道</div></div>
+          <div class="chart-placeholder"><div style="font-weight:600">渠道交易额贡献</div><div>堆叠柱状 · T0+M0</div></div>
+        </div>
+
+        <!-- Detail tabs — 3 tabs -->
+        <div class="card">
+          <div class="tabs" id="r-tabs">
+            <div class="tab active" onclick="switchTab('r',0)">📊 总览</div>
+            <div class="tab" onclick="switchTab('r',1)">🎯 方案对比</div>
+            <div class="tab" onclick="switchTab('r',2)">🤖 双引擎对照</div>
+          </div>
+
+          <div class="tab-content active" id="r-tab-0">
+            <div style="font-weight:600;font-size:11px;margin-bottom:6px">渠道效率排名</div>
+            <table>
+              <tr><th>渠道</th><th>花费</th><th>CPS</th><th>T0(亿)</th><th>过件率</th><th>评级</th></tr>
+              <tr><td>精准营销</td><td>500</td><td style="color:var(--accent)">28.0%</td><td>0.18</td><td>11.5%</td><td><span class="status-badge status-ok">优</span></td></tr>
+              <tr><td>腾讯</td><td>950</td><td>32.5%</td><td>0.29</td><td>16.0%</td><td><span class="status-badge status-ok">良</span></td></tr>
+              <tr><td>抖音</td><td>720</td><td>37.8%</td><td>0.19</td><td>14.0%</td><td><span class="status-badge status-warn">中</span></td></tr>
+              <tr><td>付费商店</td><td>480</td><td style="color:var(--danger)">40.0%</td><td>0.12</td><td>9.5%</td><td><span class="status-badge status-bad">差</span></td></tr>
+              <tr><td>免费渠道</td><td>330</td><td>0.0%</td><td>0.07</td><td>22.0%</td><td><span class="status-badge status-ok">优</span></td></tr>
+            </table>
+
+            <div class="two-col" style="margin-top:12px">
+              <div class="chart-placeholder" style="min-height:140px"><div style="font-weight:600">效率散点图</div></div>
+              <div class="chart-placeholder" style="min-height:140px"><div style="font-weight:600">CPS对比</div></div>
+            </div>
+
+            <!-- Expandable sections -->
+            <details class="expander" style="margin-top:10px">
+              <summary>👥 客群结构详情</summary>
+              <div class="expander-content">
+                <div class="metrics">
+                  <div class="metric metric-sm"><div class="metric-label">初审占比</div><div class="metric-value" style="font-size:13px">85.1%</div></div>
+                  <div class="metric metric-sm"><div class="metric-label">非初审占比</div><div class="metric-value" style="font-size:13px">14.9%</div></div>
+                  <div class="metric metric-sm"><div class="metric-label">M0/T0比值</div><div class="metric-value" style="font-size:13px">1.49</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="expander">
+              <summary>🔢 系数追溯</summary>
+              <div class="expander-content">
+                <div class="two-col">
+                  <div><b style="font-size:10px">M0/T0系数:</b> 1.49 (6月均值，波动<5%，稳定)</div>
+                  <div><b style="font-size:10px">存量M0 CPS:</b> 34.4% (3月均值，下降趋势)</div>
+                </div>
+              </div>
+            </details>
+            <details class="expander">
+              <summary>📊 历史达成</summary>
+              <div class="expander-content">
+                <table>
+                  <tr><th>指标</th><th>1月</th><th>2月</th><th>3月预估</th><th>本次</th></tr>
+                  <tr><td>花费(万)</td><td>2,467</td><td>2,850</td><td>3,000</td><td><b>3,000</b></td></tr>
+                  <tr><td>CPS</td><td>37.2%</td><td>36.1%</td><td>35.6%</td><td><b>35.3%</b></td></tr>
+                </table>
+              </div>
+            </details>
+          </div>
+
+          <div class="tab-content" id="r-tab-1">
+            <div style="font-weight:600;margin-bottom:8px">目标方案对比 <span class="badge badge-change">CHANGE: 合并目标+方案管理</span></div>
+            <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+              <span style="padding:5px 12px;background:var(--accent);color:#fff;border-radius:12px;font-size:11px">降成本</span>
+              <span style="font-size:11px;color:var(--text2)">梯度: 5%/10%/15%</span>
+              <button class="btn btn-sm btn-primary" style="margin-left:auto">重新生成</button>
+            </div>
+            <table>
+              <tr><th>指标</th><th>基线</th><th>保守(-5%)</th><th style="background:var(--accent-light)">标准(-10%)</th><th>激进(-15%)</th></tr>
+              <tr><td>CPS</td><td>35.3%</td><td>33.5%</td><td style="background:var(--accent-light);color:var(--accent);font-weight:700">31.8%</td><td>30.0%</td></tr>
+              <tr><td>T0交易(亿)</td><td>0.85</td><td>0.90</td><td style="background:var(--accent-light)">0.94</td><td>1.00</td></tr>
+              <tr><td>日均花费(万)</td><td>100</td><td>100</td><td style="background:var(--accent-light)">100</td><td>100</td></tr>
+            </table>
+            <div style="display:flex;gap:6px;margin:10px 0">
+              <button class="btn btn-sm btn-secondary">采纳保守</button>
+              <button class="btn btn-sm btn-primary">采纳标准</button>
+              <button class="btn btn-sm btn-secondary">采纳激进</button>
+            </div>
+            <hr style="margin:16px 0;border:none;border-top:1px solid var(--border)">
+            <div style="font-weight:600;font-size:11px;margin-bottom:6px">已保存方案</div>
+            <table>
+              <tr><th>名称</th><th>时间</th><th>CPS</th><th>操作</th></tr>
+              <tr><td>4月基准</td><td>04-07</td><td>35.3%</td><td><button class="btn btn-sm btn-secondary">对比</button></td></tr>
+              <tr><td>3月实际</td><td>03-31</td><td>36.1%</td><td><button class="btn btn-sm btn-secondary">加载</button></td></tr>
+            </table>
+            <div style="display:flex;gap:6px;margin-top:10px">
+              <input class="input-compact" placeholder="方案名称" style="flex:1">
+              <button class="btn btn-sm btn-primary">💾 保存</button>
+            </div>
+          </div>
+
+          <div class="tab-content" id="r-tab-2">
+            <div class="callout callout-mmm">V01规则引擎 vs MMM模型对照。方法论不同，差异属正常。</div>
+            <table>
+              <tr><th>指标</th><th>V01</th><th class="col-purple">MMM</th><th>差异</th><th>解读</th></tr>
+              <tr><td>首借交易(亿)</td><td>2.35</td><td class="col-purple">2.48</td><td style="color:var(--accent)">+5.5%</td><td>MMM偏乐观</td></tr>
+              <tr><td>CPS</td><td>35.3%</td><td class="col-purple">33.1%</td><td style="color:var(--accent)">-2.2pp</td><td>MMM预期更优</td></tr>
+              <tr><td>付费商店占比</td><td>16.1%</td><td class="col-purple">14.0%</td><td style="color:var(--danger)">-2.1pp</td><td>MMM减投(饱和)</td></tr>
+            </table>
+            <div class="two-col" style="margin-top:10px">
+              <div class="chart-placeholder" style="min-height:140px"><div style="font-weight:600">贡献对比</div></div>
+              <div class="chart-placeholder" style="min-height:140px"><div style="font-weight:600">预测区间</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- main -->
+</div><!-- layout -->
+
+<script>
+function showPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const map={page1:0,page2:1};
+  if(map[id]!==undefined)document.querySelectorAll('.nav-item')[map[id]].classList.add('active');
+  window.scrollTo(0,0);
+}
+function switchTab(group,idx){
+  document.querySelectorAll(`#${group}-tabs .tab`).forEach((t,i)=>t.classList.toggle('active',i===idx));
+  document.querySelectorAll(`[id^="${group}-tab-"]`).forEach((c,i)=>c.classList.toggle('active',i===idx));
+}
+function selectGoal(el){
+  document.querySelectorAll('.goal-card').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+}
+function showResults2(){
+  document.getElementById('preview-mode').style.display='none';
+  document.getElementById('results-mode').style.display='block';
+}
+</script>
+</body>
+</html>
