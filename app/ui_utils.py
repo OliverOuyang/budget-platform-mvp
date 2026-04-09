@@ -9,11 +9,9 @@ from app.config import (
     CHANNEL_NAMES,
     DEFAULT_1_3_RATES,
     DEFAULT_1_8_CPS,
-    DEFAULT_TOTAL_BUDGET,
-    DEFAULT_MONTH_DAYS,
-    DEFAULT_DAYS_ELAPSED,
 )
-from core.calculation_pipeline import execute_calculation_pipeline
+from core.calculation_pipeline import run_pipeline
+from core.models import BudgetParameters
 
 
 def ensure_flow_state() -> None:
@@ -244,85 +242,89 @@ def normalize_channel_history(df: pd.DataFrame) -> pd.DataFrame:
         normalized["渠道名称"] = normalized["渠道类别"]
     return normalized
 
-def _safe_val(val, default=0.0):
-    """Return float(val) if val is a finite number, else default."""
-    if val is None:
-        return default
-    try:
-        f = float(val)
-        return default if pd.isna(f) else f
-    except (ValueError, TypeError):
-        return default
-
-
 def build_channel_parameter_rows(
     last_month_data: Dict,
     template_params: Dict | None = None,
-    total_budget: float = 3000.0,
-    mmm_recommendations: Dict | None = None,
 ) -> pd.DataFrame:
-    """构建渠道参数编辑表。用户直接编辑花费(万元)，系统反算花费结构比例。
-    mmm_recommendations: optional dict from MMM model, keys are channel names,
-    values are dicts with keys: spend, roi, saturation.
-    """
+    """构建渠道参数编辑表。"""
     rows = []
     template_params = template_params or {}
-    mmm_recommendations = mmm_recommendations or {}
-    total_expense_raw = sum(_safe_val(item.get("花费")) for item in last_month_data.values())
+    total_expense = sum((item.get("花费") or 0) for item in last_month_data.values())
 
     for ch_name in CHANNEL_NAMES:
         defaults = last_month_data.get(ch_name, {})
-        hist_share = (_safe_val(defaults.get("花费")) / total_expense_raw) if total_expense_raw else 0.0
-        target_share = template_params.get("channel_budget_shares", {}).get(ch_name, hist_share)
-        target_expense = round(target_share * total_budget, -1)
+        historical_share = ((defaults.get("花费") or 0) / total_expense * 100) if total_expense else 0.0
+        target_share = (
+            template_params.get("channel_budget_shares", {}).get(
+                ch_name,
+                historical_share / 100,
+            )
+            * 100
+        )
+        approval_rate = (
+            template_params.get("channel_1_3_approval_rate", {}).get(
+                ch_name,
+                defaults.get("1-3t0过件率", DEFAULT_1_3_RATES.get(ch_name, 0.0)),
+            )
+        )
+        cps_ratio = (
+            template_params.get("channel_1_8_cps", {}).get(
+                ch_name,
+                defaults.get("1-8t0cps", DEFAULT_1_8_CPS.get(ch_name, 0.0)),
+            )
+        )
+        completion_cost = (
+            template_params.get("channel_t0_completion_cost", {}).get(
+                ch_name,
+                defaults.get("t0申完成本", 0.0),
+            )
+        )
 
-        approval_rate = template_params.get("channel_1_3_approval_rate", {}).get(
-            ch_name, _safe_val(defaults.get("1-3t0过件率"), DEFAULT_1_3_RATES.get(ch_name, 0.0)))
-        cps_ratio = template_params.get("channel_1_8_cps", {}).get(
-            ch_name, _safe_val(defaults.get("1-8t0cps"), DEFAULT_1_8_CPS.get(ch_name, 0.0)))
-
-        ref_approval = defaults.get("1-3t0过件率")
-        ref_cps = defaults.get("1-8t0cps")
-        ref_cost = defaults.get("t0申完成本")
-
-        # MMM reference columns
-        mmm_ch = mmm_recommendations.get(ch_name, {})
-        mmm_spend = mmm_ch.get("spend", np.nan)
-        mmm_roi = mmm_ch.get("roi", np.nan)
-        mmm_saturation = mmm_ch.get("saturation", np.nan)
-
-        rows.append({
-            "渠道": ch_name,
-            "目标花费(万元)": target_expense,
-            "目标1-3过件率(%)": approval_rate * 100,
-            "目标CPS(%)": cps_ratio * 100,
-            "MMM建议(万)": mmm_spend,
-            "MMM·ROI": mmm_roi,
-            "MMM·饱和度(%)": mmm_saturation,
-            "参考·花费结构(%)": hist_share * 100,
-            "参考·CPS(%)": _safe_val(ref_cps) * 100 if ref_cps is not None and not pd.isna(ref_cps) else np.nan,
-            "T0申完成本(元)": _safe_val(ref_cost, np.nan),
-        })
+        rows.append(
+            {
+                "渠道": ch_name,
+                "目标花费结构(%)": target_share,
+                "目标1-3过件率(%)": approval_rate * 100,
+                "目标CPS(%)": cps_ratio * 100,
+                "历史花费结构(%)": historical_share,
+                "历史1-3 T0过件率(%)": defaults.get("1-3t0过件率", np.nan) * 100
+                if defaults.get("1-3t0过件率") is not None
+                else np.nan,
+                "历史1-8 T0CPS(%)": defaults.get("1-8t0cps", np.nan) * 100
+                if defaults.get("1-8t0cps") is not None
+                else np.nan,
+                "历史T0申完成本(元)": defaults.get("t0申完成本", np.nan),
+            }
+        )
 
     return pd.DataFrame(rows)
 
-
 def parse_channel_parameter_rows(df: pd.DataFrame) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, float], Dict[str, float]]:
-    """从编辑表中回收渠道参数。从花费(万元)列反算花费结构比例。"""
+    """从编辑表中回收渠道参数。"""
     channel_1_3_rate: Dict[str, float] = {}
     channel_1_8_cps: Dict[str, float] = {}
     channel_t0_cost: Dict[str, float] = {}
-    expenses: Dict[str, float] = {}
+    channel_budget_shares: Dict[str, float] = {}
+
+    def _safe(val, default=0.0):
+        if val is None:
+            return default
+        try:
+            f = float(val)
+            return default if pd.isna(f) else f
+        except (ValueError, TypeError):
+            return default
 
     for row in df.to_dict("records"):
         channel_name = row["渠道"]
-        expenses[channel_name] = max(_safe_val(row.get("目标花费(万元)")), 0.0)
-        channel_1_3_rate[channel_name] = max(_safe_val(row.get("目标1-3过件率(%)")), 0.0) / 100
-        channel_1_8_cps[channel_name] = max(_safe_val(row.get("目标CPS(%)")), 0.0) / 100
-        channel_t0_cost[channel_name] = max(_safe_val(row.get("T0申完成本(元)")), 0.0)
+        channel_budget_shares[channel_name] = max(_safe(row["目标花费结构(%)"]), 0.0) / 100
+        channel_1_3_rate[channel_name] = max(_safe(row["目标1-3过件率(%)"]), 0.0) / 100
+        channel_1_8_cps[channel_name] = max(_safe(row["目标CPS(%)"]), 0.0) / 100
+        channel_t0_cost[channel_name] = max(_safe(row["历史T0申完成本(元)"]), 0.0)
 
-    total_expense = sum(expenses.values())
-    channel_budget_shares = {k: v / total_expense for k, v in expenses.items()} if total_expense > 0 else {k: 0.0 for k in expenses}
+    total_share = sum(channel_budget_shares.values())
+    if total_share > 0:
+        channel_budget_shares = {k: v / total_share for k, v in channel_budget_shares.items()}
 
     return channel_budget_shares, channel_1_3_rate, channel_1_8_cps, channel_t0_cost
 
@@ -353,20 +355,23 @@ def run_calculation(
                 st.session_state.previous_table1_result = st.session_state.get("table1_result")
                 st.session_state.previous_table2_result = st.session_state.get("table2_result")
 
-            params, coefficients, table1, table2 = execute_calculation_pipeline(
-                df_raw1=df_raw1,
-                df_raw2=df_raw2,
+            _params = BudgetParameters(
                 total_budget=total_budget,
-                channel_budget_shares=channel_budget_shares,
-                channel_1_3_rate=channel_1_3_rate,
+                channel_budget_shares=channel_budget_shares or {},
+                channel_1_3_approval_rate=channel_1_3_rate,
                 channel_1_8_cps=channel_1_8_cps,
-                channel_t0_cost=channel_t0_cost,
-                non_initial_credit=non_initial_credit,
+                channel_t0_completion_cost=channel_t0_cost,
+                non_initial_credit_transaction=non_initial_credit,
                 existing_m0_expense=existing_m0_expense,
                 rta_promotion_fee=rta_promotion_fee,
                 month_total_days=month_total_days,
                 days_elapsed=days_elapsed,
-                m0_calc_period=m0_calc_period,
+                existing_m0_calculation_months=m0_calc_period,
+            )
+            params, coefficients, table1, table2 = run_pipeline(
+                df_raw1=df_raw1,
+                df_raw2=df_raw2,
+                params=_params,
             )
 
             st.session_state.parameters = params
@@ -399,21 +404,6 @@ def run_calculation(
 
     except Exception as e:
         st.error(f"❌ 计算失败: {e}")
-
-def apply_template_to_result_widgets(params: dict) -> None:
-    """Sync loaded template / adopted scenario values into result-page widget state.
-
-    Shared by template loading (page 2) and goal-scenario adoption (_tab_goal_scenarios).
-    """
-    st.session_state.current_template_params = params
-    st.session_state["result_total_budget"] = float(params.get("total_budget", DEFAULT_TOTAL_BUDGET))
-    st.session_state["result_m0_calc_period"] = int(params.get("existing_m0_calculation_months", 3))
-    st.session_state["result_non_initial_credit"] = float(params.get("non_initial_credit_transaction", 0.0))
-    st.session_state["result_rta_promotion_fee"] = float(params.get("rta_promotion_fee", 0.0))
-    st.session_state["result_month_total_days"] = int(params.get("month_total_days", DEFAULT_MONTH_DAYS))
-    st.session_state["result_days_elapsed"] = int(params.get("days_elapsed", DEFAULT_DAYS_ELAPSED))
-    st.session_state.pop("result_channel_editor", None)
-
 
 def render_common_sidebar():
     """渲染通用的侧边栏信息"""

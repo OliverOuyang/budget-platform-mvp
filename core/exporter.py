@@ -13,7 +13,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 from core.models import Table1Result, Table2Result
-from app.config import (
+from core.constants import (
     TRANSACTION_DECIMALS,
     EXPENSE_DECIMALS,
     PERCENTAGE_DECIMALS,

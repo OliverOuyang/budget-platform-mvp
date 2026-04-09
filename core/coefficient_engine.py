@@ -5,7 +5,7 @@ from typing import Tuple, List
 import pandas as pd
 import numpy as np
 
-from app.config import M0_T0_COEFFICIENT_MONTHS, EXISTING_M0_CPS_MONTHS, TRANSACTION_UNIT_DIVISOR, EXPENSE_UNIT_DIVISOR
+from core.constants import M0_T0_COEFFICIENT_MONTHS, EXISTING_M0_CPS_MONTHS, TRANSACTION_UNIT_DIVISOR, EXPENSE_UNIT_DIVISOR
 from core.models import CalculationCoefficients
 
 DEFAULT_M0_T0_RATIO = 1.5

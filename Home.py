@@ -51,22 +51,26 @@ pg = st.navigation({
 with st.sidebar:
     st.markdown("#### 预算管理平台 v4.3c")
 
-    # 工作流进度
-    step_map = {
-        "数据准备": 1,
-        "预算工作台": 2,
-        "MMM模型洞察": 3,
-        "计算逻辑手册": 4,
-        "导出与归档": 5,
-    }
+    # 工作流进度 — 5 步细粒度跟踪
     has_data = st.session_state.get("uploaded_data") is not None
+    v01_flow = st.session_state.get("v01_flow", {})
+    has_diagnostics = bool(v01_flow.get("diagnostics"))
+    has_inputs = bool(v01_flow.get("inputs"))
     has_result = st.session_state.get("table1_result") is not None
-    progress = 0
-    if has_data:
-        progress = 1
-    if has_result:
-        progress = 2
-    st.progress(progress / 5, text=f"步骤 {progress}/5")
+    has_mmm = st.session_state.get("mmm_model") is not None
+
+    steps = [
+        ("数据上传", has_data),
+        ("质量确认", has_diagnostics),
+        ("参数配置", has_inputs),
+        ("V01 计算", has_result),
+        ("MMM 模型", has_mmm),
+    ]
+    progress = sum(1 for _, done in steps if done)
+    st.progress(progress / len(steps), text=f"进度 {progress}/{len(steps)}")
+    for label, done in steps:
+        icon = "✅" if done else "⬜"
+        st.caption(f"{icon} {label}")
 
     st.markdown("---")
     with st.expander("📖 平台说明", expanded=False):

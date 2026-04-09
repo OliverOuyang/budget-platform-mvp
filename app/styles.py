@@ -344,3 +344,15 @@ def render_risk_card(title: str, value: str, threshold: str, status: str = "ok")
         <div style="font-size:20px;font-weight:700">{value}</div>
         <div style="font-size:10px;color:#999">{threshold}</div>
     </div>'''
+
+
+# ===== Shared table styling helpers =====
+
+CHART_COLORS = ["#2E7D32", "#E53935", "#1976D2", "#FF9800", "#9E9E9E", "#7B1FA2", "#00897B"]
+
+
+def highlight_total_row(row, *, key_col: str = "渠道", key_val: str = "总计"):
+    """Highlight a summary/total row in a styled DataFrame. Reusable across tabs."""
+    if row.get(key_col) == key_val:
+        return ["background-color: #eef2ff; font-weight: 700;" for _ in row]
+    return ["" for _ in row]

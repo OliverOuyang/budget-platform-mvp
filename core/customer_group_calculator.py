@@ -19,7 +19,7 @@
 from typing import Dict
 import pandas as pd
 from core.models import Table1Result, Table2Result, BudgetParameters
-from app.config import EXCLUDED_CUSTOMER_GROUPS, TRANSACTION_UNIT_DIVISOR
+from core.constants import EXCLUDED_CUSTOMER_GROUPS, TRANSACTION_UNIT_DIVISOR
 
 
 def extrapolate_by_days(

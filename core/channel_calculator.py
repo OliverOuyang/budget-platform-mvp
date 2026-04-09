@@ -11,7 +11,7 @@ from core.models import (
     ChannelData,
     Table1Result
 )
-from app.config import CHANNEL_NAMES, TRANSACTION_UNIT_DIVISOR
+from core.constants import CHANNEL_NAMES, TRANSACTION_UNIT_DIVISOR
 
 
 def calculate_table1(
